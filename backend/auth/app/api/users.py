@@ -41,7 +41,6 @@ async def get_users(
 
     return result
 
-
 @api_v1_router.get("/users/{user_id}", response_model=UserResponseSchema)
 async def detail_user(
         user_id: uuid.UUID,
