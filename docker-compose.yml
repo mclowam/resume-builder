@@ -1,0 +1,48 @@
+services:
+  auth:
+    build:
+      context: ./backend/auth
+      dockerfile: Dockerfile
+    container_name: resume_auth
+    environment:
+      DB_HOST: auth-postgres
+      DB_PORT: 5432
+    env_file:
+      - ./backend/auth/.env
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./backend/auth:/service
+    depends_on:
+      auth-postgres:
+        condition: service_healthy
+    networks:
+      - auth-network
+    restart: on-failure
+
+  auth-postgres:
+    image: postgres:16-alpine
+    container_name: resume_auth_pg
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: auth_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata_auth:/var/lib/postgresql/data
+    networks:
+      - auth-network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U admin -d auth_db" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+
+volumes:
+  pgdata_auth:
+
+networks:
+  auth-network:
+    driver: bridge
