@@ -1,7 +1,7 @@
 import uuid
 from fastapi import HTTPException
 
-from app.services.users_abc import IUserRepository
+from app.interfaces.users import IUserRepository
 
 
 class UserService:

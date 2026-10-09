@@ -2,7 +2,7 @@ from fastapi import HTTPException
 
 from app.core.security.password import PasswordHashed
 from app.models.users import User
-from app.services.users_abc import IUserRepository
+from app.interfaces.users import IUserRepository
 
 
 class RegisterService:

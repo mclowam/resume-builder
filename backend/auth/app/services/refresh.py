@@ -3,7 +3,7 @@ import uuid
 from app.core.security.token import JWTTokenProvider
 from app.services.errors import InvalidRefreshTokenError
 from app.services.payload import build_access_payload
-from app.services.users_abc import IUserRepository
+from app.interfaces.users import IUserRepository
 
 
 class RefreshService:

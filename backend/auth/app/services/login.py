@@ -1,5 +1,6 @@
 from fastapi import HTTPException
 from app.core.security.password import PasswordHashed
+from app.core.security.token import JWTTokenProvider
 from app.schemas.users import UserLoginSchema
 from app.services.payload import build_access_payload
 from app.interfaces.users import IUserRepository
