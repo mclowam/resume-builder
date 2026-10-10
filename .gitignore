@@ -1,0 +1,9 @@
+/.tools/
+/graphify-out/
+**/__pycache__/
+.codex
+.agents
+scripts
+.graphifyignore
+AGENTS.md
+PROJECT.MD
