@@ -4,10 +4,10 @@ from pydantic import BaseModel
 
 
 class VacancyCreateSchema(BaseModel):
-    content: str
+    text: str
 
 
 class VacancyResponseSchema(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
-    content: str
+    text: str
