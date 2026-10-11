@@ -10,6 +10,8 @@ class Config:
 
     SECRET_KEY: str = getenv("SECRET_KEY")
     ALGORITHM: str = "HS256"
+    ACCESS_EXPIRE_MIN: int = 15
+    REFRESH_EXPIRE_DAYS: int = 30
 
     @property
     def DATABASE_URL(self) -> str:
