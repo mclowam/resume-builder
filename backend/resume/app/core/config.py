@@ -3,7 +3,7 @@ from os import getenv
 
 class Config:
     DB_HOST: str = getenv("DB_HOST", "localhost")
-    DB_PORT: str = getenv("DB_PORT", "5433")
+    DB_PORT: str = getenv("DB_PORT", "5434")
     DB_NAME: str = getenv("DB_NAME", "resume_db")
     DB_USER: str = getenv("DB_USER", "admin")
     DB_PASSWORD: str = getenv("DB_PASSWORD", "admin")
