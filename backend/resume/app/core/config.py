@@ -13,6 +13,11 @@ class Config:
     ACCESS_EXPIRE_MIN: int = 15
     REFRESH_EXPIRE_DAYS: int = 30
 
+    MINIO_ENDPOINT_URL: str = getenv("MINIO_ENDPOINT_URL", "http://localhost:9000")
+    MINIO_ROOT_USER: str = getenv("MINIO_ROOT_USER", "minioadmin")
+    MINIO_ROOT_PASSWORD: str = getenv("MINIO_ROOT_PASSWORD", "minioadmin")
+    MINIO_BUCKET: str = getenv("MINIO_BUCKET", "resumes")
+
     @property
     def DATABASE_URL(self) -> str:
         return (

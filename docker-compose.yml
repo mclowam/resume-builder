@@ -28,6 +28,7 @@ services:
     environment:
       DB_HOST: resume-postgres
       DB_PORT: 5432
+      MINIO_ENDPOINT_URL: http://minio:9000
     env_file:
       - ./backend/resume/.env
     ports:
@@ -39,6 +40,26 @@ services:
         condition: service_healthy
     networks:
       - resume-network
+    restart: on-failure
+
+  minio:
+    image: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    command: server /data --console-address ":9001"
+    env_file:
+      - ./backend/resume/.env
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - resume-network
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/ready" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: on-failure
 
   resume-postgres:
@@ -84,6 +105,7 @@ services:
 volumes:
   pgdata_auth:
   pgdata_resume:
+  minio_data:
 
 networks:
   auth-network:
