@@ -4,7 +4,6 @@ from pydantic import BaseModel
 
 
 class VacancyCreateSchema(BaseModel):
-    user_id: uuid.UUID
     content: str
 
 
