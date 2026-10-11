@@ -1,7 +1,45 @@
+import uuid
+from sqlalchemy import select
+
 from app.db.session import SessionDep
+from app.models.vacancy import Vacancy
+from app.schemas.vacancy import VacancyCreateSchema, VacancyResponseSchema
 
 
 class VacancyRepository:
     def __init__(self, session: SessionDep):
         self._session = session
 
+    async def add(self, data: VacancyCreateSchema, user_id: uuid.UUID):
+        vacancy = Vacancy(
+            user_id=user_id,
+            text=data.text
+        )
+        self._session.add(vacancy)
+        await self._session.commit()
+        await self._session.refresh(vacancy)
+
+        return vacancy
+
+    async def get_by_id(self, vacancy_id: uuid.UUID) -> VacancyResponseSchema | None:
+        query = select(Vacancy).where(Vacancy.id == vacancy_id)
+        result = await self._session.execute(query)
+
+        vacancy = result.scalar_one_or_none()
+        if vacancy is None:
+            return None
+
+        return VacancyResponseSchema(
+            id=vacancy.id,
+            user_id=vacancy.user_id,
+            text=vacancy.text
+        )
+
+    async def get_by_user_id(self, user_id: uuid.UUID) -> list[VacancyResponseSchema]:
+        query = select(Vacancy).where(Vacancy.user_id == user_id)
+        result = await self._session.execute(query)
+
+        return [
+            VacancyResponseSchema(id=vacancy.id, user_id=vacancy.user_id, text=vacancy.text)
+            for vacancy in result.scalars().all()
+        ]
