@@ -20,6 +20,46 @@ services:
       - auth-network
     restart: on-failure
 
+  resume:
+    build:
+      context: ./backend/resume
+      dockerfile: Dockerfile
+    container_name: resume
+    environment:
+      DB_HOST: resume-postgres
+      DB_PORT: 5432
+    env_file:
+      - ./backend/resume/.env
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./backend/resume:/service
+    depends_on:
+      resume-postgres:
+        condition: service_healthy
+    networks:
+      - resume-network
+    restart: on-failure
+
+  resume-postgres:
+    image: postgres:16-alpine
+    container_name: resume_pg
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: resume_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgdata_resume:/var/lib/postgresql/data
+    networks:
+      - resume-network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U admin -d resume_db" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   auth-postgres:
     image: postgres:16-alpine
     container_name: resume_auth_pg
@@ -40,9 +80,13 @@ services:
       retries: 5
 
 
+
 volumes:
   pgdata_auth:
+  pgdata_resume:
 
 networks:
   auth-network:
+    driver: bridge
+  resume-network:
     driver: bridge
