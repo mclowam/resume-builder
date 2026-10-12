@@ -18,6 +18,9 @@ class Config:
     MINIO_ROOT_PASSWORD: str = getenv("MINIO_ROOT_PASSWORD", "minioadmin")
     MINIO_BUCKET: str = getenv("MINIO_BUCKET", "resumes")
 
+    REDIS_URL: str = getenv("REDIS_URL", "redis://localhost:16379/0")
+    REDIS_QUEUE_NAME: str = getenv("REDIS_QUEUE_NAME", "embedding_tasks")
+
     @property
     def DATABASE_URL(self) -> str:
         return (
