@@ -100,12 +100,28 @@ services:
       timeout: 5s
       retries: 5
 
-
+  redis:
+    image: redis:7-alpine
+    container_name: resume_redis
+    command: [ "redis-server", "--appendonly", "yes" ]
+    ports:
+      - "16379:6379"
+    volumes:
+      - redisdata_resume:/data
+    networks:
+      - resume-network
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: on-failure
 
 volumes:
   pgdata_auth:
   pgdata_resume:
   minio_data:
+  redisdata_resume:
 
 networks:
   auth-network:
