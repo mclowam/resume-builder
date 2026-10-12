@@ -1,6 +1,7 @@
 import uuid
 from fastapi import HTTPException
 
+from app.interfaces.event_publisher import IEventPublisher
 from app.interfaces.resume import IResume
 from app.schemas.resume import ResumeCreateSchema, ResumeResponseSchema
 
@@ -8,9 +9,11 @@ from app.schemas.resume import ResumeCreateSchema, ResumeResponseSchema
 class ResumeService:
     def __init__(
             self,
-            resume_repository: IResume
+            resume_repository: IResume,
+            event_publisher: IEventPublisher,
     ):
         self._resume_repo = resume_repository
+        self._event_publisher = event_publisher
 
     async def create_resume(self, data: ResumeCreateSchema, user_id: uuid.UUID) -> ResumeResponseSchema:
         resume = await self._resume_repo.add(data, user_id)
