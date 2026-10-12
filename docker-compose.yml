@@ -63,7 +63,7 @@ services:
     restart: on-failure
 
   resume-postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: resume_pg
     environment:
       POSTGRES_USER: admin
