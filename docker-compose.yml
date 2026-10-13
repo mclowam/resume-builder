@@ -29,6 +29,7 @@ services:
       DB_HOST: resume-postgres
       DB_PORT: 5432
       MINIO_ENDPOINT_URL: http://minio:9000
+      REDIS_URL: redis://redis:6379/0
     env_file:
       - ./backend/resume/.env
     ports:
@@ -37,6 +38,8 @@ services:
       - ./backend/resume:/service
     depends_on:
       resume-postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - resume-network
