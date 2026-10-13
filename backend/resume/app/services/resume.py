@@ -25,7 +25,7 @@ class ResumeService:
         return ResumeResponseSchema(
             id=resume.id,
             user_id=resume.user_id,
-            image_url=resume.image_url,
+            file_url=resume.file_url,
             embedding=resume.embedding,
             created_at=resume.created_at
         )

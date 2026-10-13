@@ -14,7 +14,7 @@ class ResumeRepository:
         resume = Resume(
             id=uuid.uuid4(),
             user_id=user_id,
-            image_url=data.image_url,
+            file_url=data.file_url,
             embedding=data.embedding
         )
         self._session.add(resume)
@@ -34,7 +34,7 @@ class ResumeRepository:
         return ResumeResponseSchema(
             id=resume.id,
             user_id=resume.user_id,
-            image_url=resume.image_url,
+            file_url=resume.file_url,
             embedding=resume.embedding,
             created_at=resume.created_at
         )
@@ -47,7 +47,7 @@ class ResumeRepository:
             ResumeResponseSchema(
                 id=resume.id,
                 user_id=resume.user_id,
-                image_url=resume.image_url,
+                file_url=resume.file_url,
                 embedding=resume.embedding,
                 created_at=resume.created_at
             )

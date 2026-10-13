@@ -14,7 +14,7 @@ class Resume(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
     user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), index=True)
-    image_url: Mapped[str] = mapped_column(String(1024))
+    file_url: Mapped[str] = mapped_column(String(1024))
     embedding: Mapped[Optional[list[float]]] = mapped_column(JSONB, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
