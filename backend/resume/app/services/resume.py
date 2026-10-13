@@ -3,6 +3,7 @@ from fastapi import HTTPException
 
 from app.interfaces.event_publisher import IEventPublisher
 from app.interfaces.resume import IResume
+from app.schemas.event import ResumeUploadedEvent
 from app.schemas.resume import ResumeCreateSchema, ResumeResponseSchema
 
 
@@ -17,6 +18,9 @@ class ResumeService:
 
     async def create_resume(self, data: ResumeCreateSchema, user_id: uuid.UUID) -> ResumeResponseSchema:
         resume = await self._resume_repo.add(data, user_id)
+        await self._event_publisher.publish(
+            ResumeUploadedEvent(resume_id=resume.id, user_id=resume.user_id)
+        )
 
         return ResumeResponseSchema(
             id=resume.id,
