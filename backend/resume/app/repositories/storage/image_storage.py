@@ -1,4 +1,7 @@
+from urllib.parse import quote, unquote
+
 from aioboto3 import Session
+from botocore.exceptions import ClientError
 
 from app.core.config import Config
 
@@ -9,7 +12,17 @@ class ImageStorage:
     def __init__(self, settings: Config):
         self._settings = settings
 
-    async def upload_image(
+    def get_file_url(self, key: str) -> str:
+        endpoint = self._settings.MINIO_ENDPOINT_URL.rstrip("/")
+        return f"{endpoint}/{self._settings.MINIO_BUCKET}/{quote(key, safe='/')}"
+
+    def get_key(self, file_url: str) -> str:
+        prefix = self.get_file_url("")
+        if not file_url.startswith(prefix) or file_url == prefix:
+            raise ValueError("Invalid resume file URL")
+        return unquote(file_url[len(prefix):])
+
+    async def upload_file(
             self,
             file_obj,
             key: str,
@@ -38,10 +51,15 @@ class ImageStorage:
                 aws_access_key_id=self._settings.MINIO_ROOT_USER,
                 aws_secret_access_key=self._settings.MINIO_ROOT_PASSWORD,
         ) as s3:
-            response = await s3.get_object(
-                Bucket=self._settings.MINIO_BUCKET,
-                Key=key,
-            )
+            try:
+                response = await s3.get_object(
+                    Bucket=self._settings.MINIO_BUCKET,
+                    Key=key,
+                )
+            except ClientError as exc:
+                if exc.response.get("Error", {}).get("Code") in {"NoSuchKey", "404", "NotFound"}:
+                    raise FileNotFoundError(key) from exc
+                raise
             async with response["Body"] as body:
                 data = await body.read()
             content_type = response.get("ContentType") or "application/octet-stream"

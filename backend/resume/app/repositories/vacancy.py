@@ -2,7 +2,9 @@ import uuid
 from sqlalchemy import select
 
 from app.db.session import SessionDep
+from app.models.outbox import OutboxEvent
 from app.models.vacancy import Vacancy
+from app.schemas.event import VacancyUploadedEvent
 from app.schemas.vacancy import VacancyCreateSchema, VacancyResponseSchema
 
 
@@ -12,12 +14,16 @@ class VacancyRepository:
 
     async def add(self, data: VacancyCreateSchema, user_id: uuid.UUID):
         vacancy = Vacancy(
+            id=uuid.uuid4(),
             user_id=user_id,
             text=data.text
         )
         self._session.add(vacancy)
-        await self._session.commit()
+        event = VacancyUploadedEvent(vacancy_id=vacancy.id, user_id=vacancy.user_id)
+        self._session.add(OutboxEvent(payload=event.model_dump(mode="json")))
+        await self._session.flush()
         await self._session.refresh(vacancy)
+        await self._session.commit()
 
         return vacancy
 

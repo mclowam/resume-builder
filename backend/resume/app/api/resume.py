@@ -1,9 +1,11 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException
+from urllib.parse import quote
+
+from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
 
 from app.core.security.deps import get_current_user
 from app.schemas.users import UserPayload
-from app.schemas.resume import ResumeCreateSchema, ResumeResponseSchema
+from app.schemas.resume import ResumeResponseSchema
 from app.services.resume import ResumeService
 from app.use_cases.resume import get_resume_service
 
@@ -13,15 +15,22 @@ api_v1_router = APIRouter(
 )
 
 
-@api_v1_router.post("", response_model=ResumeResponseSchema, status_code=201)
+@api_v1_router.post("", response_class=Response, status_code=201)
 async def create_resume(
-        payload: ResumeCreateSchema,
+        request: Request,
+        file: UploadFile = File(...),
         service: ResumeService = Depends(get_resume_service),
         current_user: UserPayload = Depends(get_current_user),
 ):
-    result = await service.create_resume(data=payload, user_id=current_user.user_id)
+    try:
+        result = await service.create_resume(file=file, user_id=current_user.user_id)
+    finally:
+        await file.close()
 
-    return result
+    return Response(
+        status_code=201,
+        headers={"Location": str(request.url_for("detail_resume", resume_id=result.id))},
+    )
 
 
 @api_v1_router.get("", response_model=list[ResumeResponseSchema])
@@ -34,15 +43,19 @@ async def get_resumes(
     return result
 
 
-@api_v1_router.get("/{resume_id}", response_model=ResumeResponseSchema)
+@api_v1_router.get("/{resume_id}", response_class=Response)
 async def detail_resume(
         resume_id: uuid.UUID,
         service: ResumeService = Depends(get_resume_service),
         current_user: UserPayload = Depends(get_current_user),
 ):
-    result = await service.get_by_id(resume_id=resume_id)
+    data, content_type, filename = await service.get_file(
+        resume_id=resume_id,
+        user_id=current_user.user_id,
+    )
 
-    if result.user_id != current_user.user_id:
-        raise HTTPException(detail="Resume not found", status_code=404)
-
-    return result
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename, safe='')}"},
+    )

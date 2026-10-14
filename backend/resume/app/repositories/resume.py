@@ -2,7 +2,9 @@ import uuid
 from sqlalchemy import select
 
 from app.db.session import SessionDep
+from app.models.outbox import OutboxEvent
 from app.models.resume import Resume
+from app.schemas.event import ResumeUploadedEvent
 from app.schemas.resume import ResumeCreateSchema, ResumeResponseSchema
 
 
@@ -18,8 +20,11 @@ class ResumeRepository:
             embedding=data.embedding
         )
         self._session.add(resume)
-        await self._session.commit()
+        event = ResumeUploadedEvent(resume_id=resume.id, user_id=resume.user_id)
+        self._session.add(OutboxEvent(payload=event.model_dump(mode="json")))
+        await self._session.flush()
         await self._session.refresh(resume)
+        await self._session.commit()
 
         return resume
 

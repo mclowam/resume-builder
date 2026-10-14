@@ -1,26 +1,50 @@
+import logging
 import uuid
-from fastapi import HTTPException
+from pathlib import PurePosixPath
 
-from app.interfaces.event_publisher import IEventPublisher
+from fastapi import HTTPException, UploadFile
+
+from app.interfaces.image_storage import IImageStorage
 from app.interfaces.resume import IResume
-from app.schemas.event import ResumeUploadedEvent
 from app.schemas.resume import ResumeCreateSchema, ResumeResponseSchema
+
+
+logger = logging.getLogger(__name__)
 
 
 class ResumeService:
     def __init__(
             self,
             resume_repository: IResume,
-            event_publisher: IEventPublisher,
+            file_storage: IImageStorage,
     ):
         self._resume_repo = resume_repository
-        self._event_publisher = event_publisher
+        self._file_storage = file_storage
 
-    async def create_resume(self, data: ResumeCreateSchema, user_id: uuid.UUID) -> ResumeResponseSchema:
-        resume = await self._resume_repo.add(data, user_id)
-        await self._event_publisher.publish(
-            ResumeUploadedEvent(resume_id=resume.id, user_id=resume.user_id)
-        )
+    async def create_resume(self, file: UploadFile, user_id: uuid.UUID) -> ResumeResponseSchema:
+        filename = PurePosixPath((file.filename or "").replace("\\", "/")).name
+        content_types = {
+            ".pdf": "application/pdf",
+            ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        }
+        content_type = content_types.get(PurePosixPath(filename).suffix.lower())
+        if content_type is None or any(ord(char) < 32 or ord(char) == 127 for char in filename):
+            raise HTTPException(detail="Resume must be a PDF or DOCX file", status_code=422)
+        if not await file.read(1):
+            raise HTTPException(detail="Resume file must not be empty", status_code=422)
+        await file.seek(0)
+
+        key = f"{user_id}/{uuid.uuid4()}/{filename}"
+        data = ResumeCreateSchema(file_url=self._file_storage.get_file_url(key))
+        await self._file_storage.upload_file(file.file, key, content_type=content_type)
+        try:
+            resume = await self._resume_repo.add(data, user_id)
+        except Exception:
+            try:
+                await self._file_storage.delete_file(key)
+            except Exception:
+                logger.exception("Failed to delete resume file after database failure")
+            raise
 
         return ResumeResponseSchema(
             id=resume.id,
@@ -37,6 +61,19 @@ class ResumeService:
             raise HTTPException(detail="Resume not found", status_code=404)
 
         return resume
+
+    async def get_file(self, resume_id: uuid.UUID, user_id: uuid.UUID) -> tuple[bytes, str, str]:
+        resume = await self._resume_repo.get_by_id(resume_id)
+        if resume is None or resume.user_id != user_id:
+            raise HTTPException(detail="Resume not found", status_code=404)
+
+        try:
+            key = self._file_storage.get_key(resume.file_url)
+            data, content_type = await self._file_storage.get_bytes(key)
+        except (ValueError, FileNotFoundError) as exc:
+            raise HTTPException(detail="Resume file not found", status_code=404) from exc
+
+        return data, content_type, PurePosixPath(key).name
 
     async def get_by_user_id(self, user_id: uuid.UUID) -> list[ResumeResponseSchema]:
         resumes = await self._resume_repo.get_by_user_id(user_id)
