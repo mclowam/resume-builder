@@ -1,6 +1,5 @@
 from pydantic import TypeAdapter
 from redis.asyncio import Redis
-
 from app.schemas.event import Event
 
 
