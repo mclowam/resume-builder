@@ -2,6 +2,8 @@ from os import getenv
 
 
 class Config:
+    WORKER_API_TOKEN: str | None = getenv("WORKER_API_TOKEN")
+
     DB_HOST: str = getenv("DB_HOST", "localhost")
     DB_PORT: str = getenv("DB_PORT", "5434")
     DB_NAME: str = getenv("DB_NAME", "resume_db")

@@ -1,12 +1,26 @@
 import uuid
+from hmac import compare_digest
 
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import APIKeyHeader, OAuth2PasswordBearer
 
+from app.core.config import settings
 from app.core.security.token import JWTTokenProvider
 from app.schemas.users import UserPayload
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+worker_token = APIKeyHeader(name="X-Worker-Token", auto_error=False)
+
+
+async def get_current_worker(
+    token: str | None = Depends(worker_token),
+) -> None:
+    expected = settings.WORKER_API_TOKEN
+    if not expected:
+        raise HTTPException(status_code=503, detail="Worker access is disabled")
+
+    if not token or not compare_digest(token.encode(), expected.encode()):
+        raise HTTPException(status_code=401, detail="Invalid worker token")
 
 def get_token_provider() -> JWTTokenProvider:
     return JWTTokenProvider()

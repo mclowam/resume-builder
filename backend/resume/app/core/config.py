@@ -9,6 +9,7 @@ class Config:
     DB_PASSWORD: str = getenv("DB_PASSWORD", "admin")
 
     SECRET_KEY: str = getenv("SECRET_KEY")
+    WORKER_API_TOKEN: str | None = getenv("WORKER_API_TOKEN")
     ALGORITHM: str = "HS256"
     ACCESS_EXPIRE_MIN: int = 15
     REFRESH_EXPIRE_DAYS: int = 30
