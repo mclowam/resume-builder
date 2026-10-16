@@ -6,11 +6,21 @@ from app.core.core import settings
 
 
 class ResumeHttpClient:
-    def __init__(self, base_url: settings.RESUME_API_URL):
-        self._client = httpx.Client(base_url=base_url, timeout=settings.HTTP_TIMEOUT)
+    def __init__(self, base_url: str):
+        self._client = httpx.AsyncClient(
+            base_url=base_url,
+            timeout=settings.HTTP_TIME_OUT,
+            headers={"X-Worker-Token": settings.WORKER_API_TOKEN or ""},
+        )
 
-    async def get_resume(self, resume_id: uuid.UUID):
-        response = self._client.get(f"resumes/{resume_id}")
+    async def get_resume(self, resume_id: uuid.UUID, user_id: uuid.UUID):
+        response = await self._client.get(
+            f"/internal/resumes/{resume_id}",
+            params={"user_id": str(user_id)},
+        )
         response.raise_for_status()
-        return response.json()
+        return response.content
+
+    async def close(self) -> None:
+        await self._client.aclose()
 
