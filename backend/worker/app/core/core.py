@@ -18,6 +18,9 @@ class Config:
     REDIS_URL: str = getenv("REDIS_URL", "redis://localhost:16379/0")
     REDIS_QUEUE_NAME: str = getenv("REDIS_QUEUE_NAME", "embedding_tasks")
 
+    RESUME_API_URL: str = getenv("RESUME_API_URL", "http://localhost:8002")
+    HTTP_TIME_OUT: float = 20.0
+
     @property
     def DATABASE_URL(self) -> str:
         return (
