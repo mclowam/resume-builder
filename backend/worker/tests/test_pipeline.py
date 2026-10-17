@@ -13,8 +13,11 @@ class PipelineServiceTests(unittest.IsolatedAsyncioTestCase):
         self.resume_client = AsyncMock()
         self.vacancy_client = AsyncMock()
         self.extractor = Mock()
+        self.embedding_client = AsyncMock()
+        self.embedding_client.model = "text-embedding-3-small"
+        self.embedding_client.embed.return_value = [0.1, -0.2]
         self.pipeline = PipelineService(
-            self.resume_client, self.vacancy_client, self.extractor,
+            self.resume_client, self.vacancy_client, self.extractor, self.embedding_client,
         )
         self.resource_id = uuid.uuid4()
         self.user_id = uuid.uuid4()
@@ -31,9 +34,15 @@ class PipelineServiceTests(unittest.IsolatedAsyncioTestCase):
         self.resume_client.get_resume.return_value = b"resume file"
         self.extractor.extract.return_value = "  Разработчик\nPython\nОпыт работы  "
 
-        text = await self.pipeline.process(self.resume_event)
+        document = await self.pipeline.process(self.resume_event)
 
-        self.assertEqual(text, "  Разработчик\nPython\nОпыт работы  ")
+        self.assertEqual(document.text, "  Разработчик\nPython\nОпыт работы  ")
+        self.assertEqual(document.document_id, self.resource_id)
+        self.assertEqual(document.user_id, self.user_id)
+        self.assertEqual(document.document_type, "resume")
+        self.assertEqual(document.embedding, [0.1, -0.2])
+        self.assertEqual(document.embedding_model, "text-embedding-3-small")
+        self.embedding_client.embed.assert_awaited_once_with(document.text)
         self.resume_client.get_resume.assert_awaited_once_with(
             resume_id=self.resource_id, user_id=self.user_id,
         )
@@ -45,9 +54,15 @@ class PipelineServiceTests(unittest.IsolatedAsyncioTestCase):
             "text": "  Backend developer\nPython, PostgreSQL  ",
         }
 
-        text = await self.pipeline.process(self.vacancy_event)
+        document = await self.pipeline.process(self.vacancy_event)
 
-        self.assertEqual(text, "  Backend developer\nPython, PostgreSQL  ")
+        self.assertEqual(document.text, "  Backend developer\nPython, PostgreSQL  ")
+        self.assertEqual(document.document_id, self.resource_id)
+        self.assertEqual(document.user_id, self.user_id)
+        self.assertEqual(document.document_type, "vacancy")
+        self.assertEqual(document.embedding, [0.1, -0.2])
+        self.assertEqual(document.embedding_model, "text-embedding-3-small")
+        self.embedding_client.embed.assert_awaited_once_with(document.text)
         self.vacancy_client.get_vacancy.assert_awaited_once_with(
             vacancy_id=self.resource_id, user_id=self.user_id,
         )
@@ -61,6 +76,7 @@ class PipelineServiceTests(unittest.IsolatedAsyncioTestCase):
 
                 with self.assertRaises(ValueError):
                     await self.pipeline.process(self.vacancy_event)
+        self.embedding_client.embed.assert_not_awaited()
 
     async def test_rejects_empty_resume_text(self):
         self.resume_client.get_resume.return_value = b"resume file"
@@ -70,6 +86,17 @@ class PipelineServiceTests(unittest.IsolatedAsyncioTestCase):
 
                 with self.assertRaises(ValueError):
                     await self.pipeline.process(self.resume_event)
+        self.embedding_client.embed.assert_not_awaited()
+
+    async def test_propagates_embedding_error(self):
+        self.vacancy_client.get_vacancy.return_value = {"text": "Full text"}
+        error = ValueError("Invalid embedding response")
+        self.embedding_client.embed.side_effect = error
+
+        with self.assertRaises(ValueError) as raised:
+            await self.pipeline.process(self.vacancy_event)
+
+        self.assertIs(raised.exception, error)
 
     async def test_propagates_extraction_error(self):
         self.resume_client.get_resume.return_value = b"invalid file"

@@ -14,8 +14,14 @@ async def main() -> None:
             event = await consumer.consume()
             if event is None:
                 continue
-            text = await pipeline.process(event)
-            logger.info("Prepared text for %s: %s characters", event.event_type, len(text))
+            document = await pipeline.process(event)
+            logger.info(
+                "Generated embedding for %s %s: model=%s, dimensions=%s",
+                document.document_type,
+                document.document_id,
+                document.embedding_model,
+                len(document.embedding),
+            )
 
 
 if __name__ == "__main__":
