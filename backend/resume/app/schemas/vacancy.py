@@ -1,4 +1,5 @@
 import uuid
+from typing import Optional
 
 from pydantic import BaseModel
 
@@ -11,3 +12,7 @@ class VacancyResponseSchema(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
     text: str
+
+
+class VacancySetEmbeddingSchema(BaseModel):
+    embedding: Optional[list[float]]

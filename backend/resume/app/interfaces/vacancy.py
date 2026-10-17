@@ -13,3 +13,4 @@ class IVacancy(Protocol):
 
     async def get_by_user_id(self, user_id: uuid.UUID) -> list[VacancyResponseSchema]:
         pass
+
