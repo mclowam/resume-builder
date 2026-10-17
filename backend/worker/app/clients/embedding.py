@@ -1,5 +1,3 @@
-import math
-
 import httpx
 
 from app.core.core import settings
@@ -17,22 +15,12 @@ class EmbeddingHttpClient:
         )
 
     async def embed(self, text: str) -> list[float]:
-        if not isinstance(text, str) or not text.strip():
-            raise ValueError("Document text must not be empty")
         response = await self._client.post(
             "embeddings",
             json={"model": self.model, "input": text, "encoding_format": "float"},
         )
         response.raise_for_status()
-        try:
-            embedding = response.json()["data"][0]["embedding"]
-            if not isinstance(embedding, list) or not embedding:
-                raise ValueError
-            if any(type(value) not in (int, float) or not math.isfinite(value) for value in embedding):
-                raise ValueError
-            return [float(value) for value in embedding]
-        except (KeyError, IndexError, TypeError, ValueError, OverflowError) as exc:
-            raise ValueError("Invalid embedding response") from exc
+        return response.json()["data"][0]["embedding"]
 
     async def close(self) -> None:
         await self._client.aclose()
