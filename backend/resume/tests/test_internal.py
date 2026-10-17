@@ -1,6 +1,7 @@
 import json
 import unittest
 import uuid
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -23,11 +24,15 @@ class InternalTests(unittest.IsolatedAsyncioTestCase):
         self.resume = SimpleNamespace(
             id=uuid.uuid4(), user_id=self.user_id,
             file_url="http://minio/resumes/resume.pdf",
+            embedding=[0.1, -0.2], created_at=datetime.now(timezone.utc),
         )
         self.vacancy = VacancyResponseSchema(
             id=uuid.uuid4(), user_id=self.user_id, text="Python developer",
         )
-        self.resume_repository = SimpleNamespace(get_by_id=AsyncMock(return_value=self.resume))
+        self.resume_repository = SimpleNamespace(
+            get_by_id=AsyncMock(return_value=self.resume),
+            set_embedding=AsyncMock(return_value=self.resume),
+        )
         self.vacancy_repository = SimpleNamespace(
             get_by_id=AsyncMock(return_value=self.vacancy),
             set_embedding=AsyncMock(return_value=self.vacancy),
@@ -132,6 +137,46 @@ class InternalTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(status, 401)
         self.vacancy_repository.get_by_id.assert_not_awaited()
         self.vacancy_repository.set_embedding.assert_not_awaited()
+
+    async def test_worker_updates_resume_embedding_without_user_jwt(self):
+        status, _, body = await self.request(
+            self.paths[0], method="PATCH", payload={"embedding": [0.1, -0.2]},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["embedding"], [0.1, -0.2])
+        self.resume_repository.set_embedding.assert_awaited_once()
+        resume_id, data = self.resume_repository.set_embedding.call_args.args
+        self.assertEqual(resume_id, self.resume.id)
+        self.assertEqual(data.embedding, [0.1, -0.2])
+        self.storage.get_bytes.assert_not_awaited()
+
+    async def test_resume_patch_rejects_invalid_worker_token(self):
+        for token in (None, "wrong-token"):
+            with self.subTest(token=token):
+                status, _, _ = await self.request(
+                    self.paths[0], token=token, method="PATCH", payload={"embedding": [0.1]},
+                )
+                self.assertEqual(status, 401)
+        self.resume_repository.get_by_id.assert_not_awaited()
+        self.resume_repository.set_embedding.assert_not_awaited()
+
+    async def test_resume_patch_wrong_owner_or_missing_resume_does_not_update(self):
+        for resume in (self.resume, None):
+            with self.subTest(resume=resume):
+                self.resume_repository.get_by_id.return_value = resume
+                status, _, _ = await self.request(
+                    self.paths[0], query=f"user_id={uuid.uuid4()}",
+                    method="PATCH", payload={"embedding": [0.1]},
+                )
+                self.assertEqual(status, 404)
+        self.resume_repository.set_embedding.assert_not_awaited()
+
+    async def test_resume_removed_before_update_returns_404(self):
+        self.resume_repository.set_embedding.return_value = None
+        status, _, _ = await self.request(
+            self.paths[0], method="PATCH", payload={"embedding": [0.1]},
+        )
+        self.assertEqual(status, 404)
 
     async def test_patch_wrong_owner_or_missing_vacancy_does_not_update(self):
         for vacancy in (self.vacancy, None):

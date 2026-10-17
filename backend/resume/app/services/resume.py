@@ -75,4 +75,7 @@ class ResumeService:
     async def set_embedding(self, resume_id: uuid.UUID, data: ResumeSetEmbeddingSchema):
         resume = await self._resume_repo.set_embedding(resume_id, data)
 
+        if resume is None:
+            raise HTTPException(detail="Resume not found", status_code=404)
+
         return resume

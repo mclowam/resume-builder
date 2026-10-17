@@ -4,6 +4,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Response
 
 from app.core.security.deps import get_current_worker
+from app.schemas.resume import ResumeResponseSchema, ResumeSetEmbeddingSchema
 from app.schemas.vacancy import VacancyResponseSchema, VacancySetEmbeddingSchema
 from app.services.resume import ResumeService
 from app.services.vacancy import VacancyService
@@ -33,6 +34,21 @@ async def get_resume_file(
         media_type=content_type,
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename, safe='')}"},
     )
+
+
+@api_v1_router.patch("/resumes/{resume_id}", response_model=ResumeResponseSchema, status_code=200)
+async def set_embedding_resume(
+        resume_id: uuid.UUID,
+        user_id: uuid.UUID,
+        payload: ResumeSetEmbeddingSchema,
+        service: ResumeService = Depends(get_resume_service),
+):
+    resume = await service.get_by_id(resume_id=resume_id)
+    if resume.user_id != user_id:
+        raise HTTPException(detail="Resume not found", status_code=404)
+
+    result = await service.set_embedding(resume_id=resume_id, data=payload)
+    return result
 
 
 @api_v1_router.get("/vacancies/{vacancy_id}", response_model=VacancyResponseSchema)
