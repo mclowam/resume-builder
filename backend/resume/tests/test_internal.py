@@ -28,7 +28,10 @@ class InternalTests(unittest.IsolatedAsyncioTestCase):
             id=uuid.uuid4(), user_id=self.user_id, text="Python developer",
         )
         self.resume_repository = SimpleNamespace(get_by_id=AsyncMock(return_value=self.resume))
-        self.vacancy_repository = SimpleNamespace(get_by_id=AsyncMock(return_value=self.vacancy))
+        self.vacancy_repository = SimpleNamespace(
+            get_by_id=AsyncMock(return_value=self.vacancy),
+            set_embedding=AsyncMock(return_value=self.vacancy),
+        )
         self.storage = SimpleNamespace(
             get_key=Mock(return_value="resume.pdf"),
             get_bytes=AsyncMock(return_value=(b"original file bytes", "application/pdf")),
@@ -51,20 +54,24 @@ class InternalTests(unittest.IsolatedAsyncioTestCase):
         token_patch.start()
         self.addCleanup(token_patch.stop)
 
-    async def request(self, path, token="test-worker-token", query=None):
+    async def request(self, path, token="test-worker-token", query=None, method="GET", payload=None):
         messages = []
+        headers = [] if token is None else [(b"x-worker-token", token.encode())]
+        if payload is not None:
+            headers.append((b"content-type", b"application/json"))
 
         async def receive():
-            return {"type": "http.request", "body": b"", "more_body": False}
+            body = b"" if payload is None else json.dumps(payload).encode()
+            return {"type": "http.request", "body": body, "more_body": False}
 
         async def send(message):
             messages.append(message)
 
         await self.app({
             "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
-            "method": "GET", "scheme": "http", "path": path, "root_path": "",
+            "method": method, "scheme": "http", "path": path, "root_path": "",
             "query_string": (f"user_id={self.user_id}" if query is None else query).encode(),
-            "headers": [] if token is None else [(b"x-worker-token", token.encode())],
+            "headers": headers,
             "server": ("test", 80), "client": ("test", 1234),
         }, receive, send)
         response = next(message for message in messages if message["type"] == "http.response.start")
@@ -105,6 +112,44 @@ class InternalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body), self.vacancy.model_dump(mode="json"))
         self.vacancy_repository.get_by_id.assert_awaited_once_with(self.vacancy.id)
+
+    async def test_worker_updates_embedding_without_user_jwt(self):
+        status, _, _ = await self.request(
+            self.paths[1], method="PATCH", payload={"embedding": [0.1, -0.2]},
+        )
+        self.assertEqual(status, 200)
+        self.vacancy_repository.set_embedding.assert_awaited_once()
+        vacancy_id, data = self.vacancy_repository.set_embedding.call_args.args
+        self.assertEqual(vacancy_id, self.vacancy.id)
+        self.assertEqual(data.embedding, [0.1, -0.2])
+
+    async def test_patch_rejects_invalid_worker_token(self):
+        for token in (None, "wrong-token"):
+            with self.subTest(token=token):
+                status, _, _ = await self.request(
+                    self.paths[1], token=token, method="PATCH", payload={"embedding": [0.1]},
+                )
+                self.assertEqual(status, 401)
+        self.vacancy_repository.get_by_id.assert_not_awaited()
+        self.vacancy_repository.set_embedding.assert_not_awaited()
+
+    async def test_patch_wrong_owner_or_missing_vacancy_does_not_update(self):
+        for vacancy in (self.vacancy, None):
+            with self.subTest(vacancy=vacancy):
+                self.vacancy_repository.get_by_id.return_value = vacancy
+                status, _, _ = await self.request(
+                    self.paths[1], query=f"user_id={uuid.uuid4()}",
+                    method="PATCH", payload={"embedding": [0.1]},
+                )
+                self.assertEqual(status, 404)
+        self.vacancy_repository.set_embedding.assert_not_awaited()
+
+    async def test_patch_vacancy_removed_before_update_returns_404(self):
+        self.vacancy_repository.set_embedding.return_value = None
+        status, _, _ = await self.request(
+            self.paths[1], method="PATCH", payload={"embedding": [0.1]},
+        )
+        self.assertEqual(status, 404)
 
     async def test_wrong_owner_hidden(self):
         for path in self.paths:
