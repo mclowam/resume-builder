@@ -6,7 +6,7 @@ from fastapi import HTTPException, UploadFile
 
 from app.interfaces.image_storage import IImageStorage
 from app.interfaces.resume import IResume
-from app.schemas.resume import ResumeCreateSchema, ResumeResponseSchema
+from app.schemas.resume import ResumeCreateSchema, ResumeResponseSchema, ResumeSetEmbeddingSchema
 from app.services.resume_file import validate_resume_file
 
 
@@ -71,3 +71,8 @@ class ResumeService:
 
     async def get_by_user_id(self, user_id: uuid.UUID) -> list[ResumeResponseSchema]:
         return await self._resume_repo.get_by_user_id(user_id)
+
+    async def set_embedding(self, resume_id: uuid.UUID, data: ResumeSetEmbeddingSchema):
+        resume = await self._resume_repo.set_embedding(resume_id, data)
+
+        return resume
