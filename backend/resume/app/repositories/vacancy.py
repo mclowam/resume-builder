@@ -5,7 +5,7 @@ from app.db.session import SessionDep
 from app.models.outbox import OutboxEvent
 from app.models.vacancy import Vacancy
 from app.schemas.event import VacancyUploadedEvent
-from app.schemas.vacancy import VacancyCreateSchema, VacancyResponseSchema
+from app.schemas.vacancy import VacancyCreateSchema, VacancyResponseSchema, VacancySetEmbeddingSchema
 
 
 class VacancyRepository:
@@ -49,3 +49,16 @@ class VacancyRepository:
             VacancyResponseSchema(id=vacancy.id, user_id=vacancy.user_id, text=vacancy.text)
             for vacancy in result.scalars().all()
         ]
+
+    async def set_embedding(self, vacancy_id: uuid.UUID, data: VacancySetEmbeddingSchema):
+        query = select(Vacancy).where(Vacancy.id == vacancy_id)
+        result = await self._session.execute(query)
+
+        vacancy = result.scalar_one_or_none()
+        if vacancy is None:
+            return None
+
+        vacancy.embedding = data.embedding
+        await self._session.commit()
+
+        return vacancy
