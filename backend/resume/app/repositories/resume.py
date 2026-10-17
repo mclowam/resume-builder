@@ -5,7 +5,7 @@ from app.db.session import SessionDep
 from app.models.outbox import OutboxEvent
 from app.models.resume import Resume
 from app.schemas.event import ResumeUploadedEvent
-from app.schemas.resume import ResumeCreateSchema, ResumeResponseSchema
+from app.schemas.resume import ResumeCreateSchema, ResumeResponseSchema, ResumeSetEmbeddingSchema
 
 
 class ResumeRepository:
@@ -58,3 +58,16 @@ class ResumeRepository:
             )
             for resume in result.scalars().all()
         ]
+
+    async def set_embedding(self, resume_id: uuid.UUID, data: ResumeSetEmbeddingSchema):
+        query = select(Resume).where(Resume.id == resume_id)
+        result = await self._session.execute(query)
+
+        resume = result.scalar_one_or_none()
+        if resume is None:
+            return None
+
+        resume.embedding = data.embedding
+        await self._session.commit()
+
+        return resume
