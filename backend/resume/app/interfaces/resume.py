@@ -1,7 +1,7 @@
 import uuid
 from typing import Protocol
 
-from app.schemas.resume import ResumeCreateSchema, ResumeResponseSchema
+from app.schemas.resume import ResumeCreateSchema, ResumeResponseSchema, ResumeSetEmbeddingSchema
 
 
 class IResume(Protocol):
@@ -12,4 +12,7 @@ class IResume(Protocol):
         pass
 
     async def get_by_user_id(self, user_id: uuid.UUID) -> list[ResumeResponseSchema]:
+        pass
+
+    async def set_embedding(self, resume_id: uuid.UUID, data: ResumeSetEmbeddingSchema):
         pass
