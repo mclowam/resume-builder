@@ -2,7 +2,7 @@ import uuid
 from fastapi import HTTPException
 
 from app.interfaces.vacancy import IVacancy
-from app.schemas.vacancy import VacancyCreateSchema, VacancyResponseSchema
+from app.schemas.vacancy import VacancyCreateSchema, VacancyResponseSchema, VacancySetEmbeddingSchema
 
 
 class VacancyService:
@@ -33,3 +33,8 @@ class VacancyService:
         vacancies = await self._vacancy_repo.get_by_user_id(user_id)
 
         return vacancies
+
+    async def set_embedding(self, vacancy_id: uuid.UUID, data: VacancySetEmbeddingSchema):
+        vacancy = await self._vacancy_repo.set_embedding(vacancy_id, data)
+
+        return vacancy
