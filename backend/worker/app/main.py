@@ -1,6 +1,5 @@
 import asyncio
 import logging
-
 from app.use_cases.event_consumer import get_event_consumer
 from app.use_cases.pipeline import get_pipeline_service
 
@@ -16,7 +15,7 @@ async def main() -> None:
                 continue
             document = await pipeline.process(event)
             logger.info(
-                "Generated embedding for %s %s: model=%s, dimensions=%s",
+                "Saved embedding for %s %s: model=%s, dimensions=%s",
                 document.document_type,
                 document.document_id,
                 document.embedding_model,
