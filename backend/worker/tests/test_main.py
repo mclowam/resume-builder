@@ -65,6 +65,7 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
         if isinstance(error, ValueError):
             pipeline.process.side_effect = error
         extractor = Mock()
+        document_service = Mock()
 
         with (
             patch("app.use_cases.event_consumer.Redis.from_url", return_value=redis),
@@ -73,13 +74,17 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
             patch("app.use_cases.pipeline.EmbeddingHttpClient", return_value=embedding),
             patch("app.use_cases.event_consumer.RedisConsumer", return_value=consumer),
             patch("app.use_cases.pipeline.TextExtractor", return_value=extractor),
+            patch("app.use_cases.pipeline.DocumentService", return_value=document_service) as document_factory,
             patch("app.use_cases.pipeline.PipelineService", return_value=pipeline) as factory,
         ):
             with self.assertRaises(type(error)):
                 await main()
 
-        factory.assert_called_once_with(
+        document_factory.assert_called_once_with(
             resume_client=resume, vacancy_client=vacancy, text_extractor=extractor,
+        )
+        factory.assert_called_once_with(
+            document_service=document_service,
             embedding_client=embedding,
         )
         pipeline.process.assert_awaited_once_with(event)
