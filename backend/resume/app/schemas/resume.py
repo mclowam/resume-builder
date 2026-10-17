@@ -16,3 +16,7 @@ class ResumeResponseSchema(BaseModel):
     file_url: str
     embedding: Optional[list[float]] = None
     created_at: datetime
+
+
+class ResumeSetEmbeddingSchema(BaseModel):
+    embedding: Optional[list[float]]
