@@ -37,4 +37,7 @@ class VacancyService:
     async def set_embedding(self, vacancy_id: uuid.UUID, data: VacancySetEmbeddingSchema):
         vacancy = await self._vacancy_repo.set_embedding(vacancy_id, data)
 
+        if vacancy is None:
+            raise HTTPException(detail="Vacancy not found", status_code=404)
+
         return vacancy
