@@ -103,6 +103,78 @@ class ResumeTests(unittest.IsolatedAsyncioTestCase):
                 self.storage.get_file_url.assert_not_called()
                 self.repository.add.assert_not_awaited()
 
+    async def test_filename_paths_are_removed(self):
+        for filename in ("../../resume.pdf", "C:\\uploads\\resume.pdf"):
+            with self.subTest(filename=filename):
+                file = UploadFile(io.BytesIO(self.pdf_bytes()), filename=filename)
+
+                await self.service.create_resume(file, self.user_id)
+
+                key = self.storage.upload_file.call_args.args[1]
+                owner, document_id, name = key.split("/")
+                self.assertEqual(owner, str(self.user_id))
+                self.assertEqual(name, "resume.pdf")
+                uuid.UUID(document_id)
+
+    async def test_invalid_filename_rejected_before_upload(self):
+        for filename in (None, "", "resume\n.pdf", "resume\x7f.pdf"):
+            with self.subTest(filename=filename):
+                file = UploadFile(io.BytesIO(self.pdf_bytes()), filename=filename)
+
+                with self.assertRaises(HTTPException) as error:
+                    await self.service.create_resume(file, self.user_id)
+
+                self.assertEqual(error.exception.status_code, 422)
+                self.storage.upload_file.assert_not_awaited()
+                self.repository.add.assert_not_awaited()
+
+    async def test_database_error_deletes_uploaded_file(self):
+        error = RuntimeError("Database failed")
+        self.repository.add.side_effect = error
+        file = UploadFile(io.BytesIO(self.pdf_bytes()), filename="resume.pdf")
+
+        with self.assertRaises(RuntimeError) as raised:
+            await self.service.create_resume(file, self.user_id)
+
+        self.assertIs(raised.exception, error)
+        key = self.storage.upload_file.call_args.args[1]
+        self.storage.delete_file.assert_awaited_once_with(key)
+
+    async def test_cleanup_error_preserves_database_error(self):
+        error = RuntimeError("Database failed")
+        self.repository.add.side_effect = error
+        self.storage.delete_file.side_effect = OSError("Storage failed")
+        file = UploadFile(io.BytesIO(self.pdf_bytes()), filename="resume.pdf")
+
+        with self.assertLogs("app.services.resume", level="ERROR"):
+            with self.assertRaises(RuntimeError) as raised:
+                await self.service.create_resume(file, self.user_id)
+
+        self.assertIs(raised.exception, error)
+        self.storage.delete_file.assert_awaited_once()
+
+    async def test_upload_error_does_not_create_database_record(self):
+        error = OSError("Upload failed")
+        self.storage.upload_file.side_effect = error
+        file = UploadFile(io.BytesIO(self.pdf_bytes()), filename="resume.pdf")
+
+        with self.assertRaises(OSError) as raised:
+            await self.service.create_resume(file, self.user_id)
+
+        self.assertIs(raised.exception, error)
+        self.repository.add.assert_not_awaited()
+
+    async def test_missing_stored_file_returns_404(self):
+        self.repository.get_by_id = AsyncMock(return_value=self.resume)
+        self.storage.get_key = Mock(return_value="resume.pdf")
+        self.storage.get_bytes = AsyncMock(side_effect=FileNotFoundError("resume.pdf"))
+
+        with self.assertRaises(HTTPException) as error:
+            await self.service.get_file(self.resume.id, self.user_id)
+
+        self.assertEqual(error.exception.status_code, 404)
+        self.assertEqual(error.exception.detail, "Resume file not found")
+
 
 if __name__ == "__main__":
     unittest.main()
