@@ -5,6 +5,7 @@ from app.clients.embedding import EmbeddingHttpClient
 from app.clients.resume import ResumeHttpClient
 from app.clients.vacancy import VacancyHttpClient
 from app.core.core import settings
+from app.services.document import DocumentService
 from app.services.pipeline import PipelineService
 from app.services.text_extractor import TextExtractor
 
@@ -23,9 +24,12 @@ async def get_pipeline_service() -> AsyncIterator[PipelineService]:
         )
         stack.push_async_callback(embedding_client.close)
 
-        yield PipelineService(
+        document_service = DocumentService(
             resume_client=resume_client,
             vacancy_client=vacancy_client,
             text_extractor=TextExtractor(),
+        )
+        yield PipelineService(
+            document_service=document_service,
             embedding_client=embedding_client,
         )
