@@ -1,7 +1,7 @@
 import uuid
 from typing import Protocol
 
-from app.schemas.vacancy import VacancyCreateSchema, VacancyResponseSchema
+from app.schemas.vacancy import VacancyCreateSchema, VacancyResponseSchema, VacancySetEmbeddingSchema
 
 
 class IVacancy(Protocol):
@@ -14,3 +14,5 @@ class IVacancy(Protocol):
     async def get_by_user_id(self, user_id: uuid.UUID) -> list[VacancyResponseSchema]:
         pass
 
+    async def set_embedding(self, vacancy_id: uuid.UUID, data: VacancySetEmbeddingSchema):
+        pass
