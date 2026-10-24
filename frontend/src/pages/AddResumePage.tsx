@@ -1,74 +1,49 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { addResume, DocumentApiError } from '../api/documents'
+import { addResume } from '../api/documents'
+import { navigate } from '../app/navigation'
+import { getDraft } from '../app/drafts'
+import { ErrorNotice } from '../components/Feedback'
+import Page from '../components/Page'
 
-function AddResumePage() {
-  const [file, setFile] = useState<File | null>(null)
+function AddResumePage({ userId }: { userId: string }) {
+  const [file, setFile] = useState<File | null>(() => getDraft(userId).resume)
   const [pending, setPending] = useState(false)
-  const [error, setError] = useState('')
-  const [needsLogin, setNeedsLogin] = useState(false)
-  const [success, setSuccess] = useState(false)
+  const [error, setError] = useState<unknown>(null)
+  const busy = useRef(false)
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const form = event.currentTarget
-    setError('')
-    setNeedsLogin(false)
-    setSuccess(false)
-
-    if (!file || !/\.(pdf|docx)$/i.test(file.name)) {
-      setError('Выберите файл PDF или DOCX.')
+    if (busy.current) return
+    setError(null)
+    if (!file || !/\.(pdf|docx)$/i.test(file.name) || file.size === 0) {
+      setError(new Error('Выберите непустой файл PDF или DOCX.'))
       return
     }
-
+    busy.current = true
     setPending(true)
-
     try {
       await addResume(file)
-      setSuccess(true)
-      setFile(null)
-      form.reset()
+      getDraft(userId).resume = null
+      navigate('/my-resumes?created=1', true)
     } catch (cause) {
-      setNeedsLogin(cause instanceof DocumentApiError && cause.status === 401)
-      setError(cause instanceof Error ? cause.message : 'Неизвестная ошибка. Попробуйте позже.')
+      setError(cause)
     } finally {
+      busy.current = false
       setPending(false)
     }
   }
 
-  return (
-    <main className="document-layout">
-      <section className="document-card" aria-labelledby="document-title">
-        <h1 id="document-title">Добавить резюме</h1>
-        <p className="document-description">Загрузите резюме в формате PDF или DOCX.</p>
-        <form onSubmit={submit}>
-          <label htmlFor="resume-file">Файл резюме</label>
-          <input
-            accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            id="resume-file"
-            name="file"
-            onChange={(event) => {
-              setFile(event.target.files?.[0] ?? null)
-              setError('')
-              setNeedsLogin(false)
-              setSuccess(false)
-            }}
-            required
-            type="file"
-          />
-          {error && (
-            <p className="form-error" role="alert">
-              {error} {needsLogin && <a href="/login">Войти</a>}
-            </p>
-          )}
-          {success && <p className="form-success" role="status">Резюме добавлено.</p>}
-          <button className="button button-primary submit-button" disabled={pending} type="submit">
-            {pending ? 'Загрузка...' : 'Добавить резюме'}
-          </button>
-        </form>
-      </section>
-    </main>
-  )
+  return <Page title="Добавить резюме" description="Загрузите готовый документ целиком." back={{ href: '/my-resumes', label: 'Мои резюме' }} narrow>
+    <form onSubmit={submit} aria-busy={pending}>
+      <label htmlFor="resume-file">Файл резюме</label>
+      <input id="resume-file" name="file" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required={!file} disabled={pending} aria-describedby="file-help" onChange={(event) => { const selected = event.target.files?.[0] || null; setFile(selected); getDraft(userId).resume = selected; setError(null) }} />
+      <p className="field-help" id="file-help">PDF или DOCX, без пароля. После загрузки документ появится в списке.</p>
+      {file && <p className="selected-file">Выбран: {file.name}</p>}
+      <ErrorNotice error={error} listPath="/my-resumes" />
+      <button className="button button-primary" type="submit" disabled={pending}>{pending ? 'Загрузка…' : 'Загрузить резюме'}</button>
+    </form>
+  </Page>
 }
 
 export default AddResumePage

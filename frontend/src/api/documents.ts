@@ -1,65 +1,71 @@
-export class DocumentApiError extends Error {
-  status: number
+import type { Resume, Vacancy } from '../types/api'
+import { ApiError, request, requestJson } from './client'
+import { getSession } from './session'
 
-  constructor(message: string, status: number) {
-    super(message)
-    this.status = status
-  }
-}
-
-type Vacancy = {
-  id: string
-  text: string
-}
-
-async function sendDocument(path: string, body: BodyInit, contentType?: string) {
-  const token = sessionStorage.getItem('access_token')
-
-  if (!token) {
-    throw new DocumentApiError('Войдите в аккаунт, чтобы продолжить.', 401)
-  }
-
-  let response: Response
-
+export function resumeLocation(location: string | null) {
+  if (!location) return null
   try {
-    response = await fetch(path, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        ...(contentType ? { 'Content-Type': contentType } : {}),
-      },
-      body,
-    })
+    const url = new URL(location, 'http://local.invalid')
+    return /^\/resumes\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(url.pathname) && !url.search && !url.hash && /^https?:$/.test(url.protocol) ? url.pathname : null
   } catch {
-    throw new Error('Не удалось связаться с сервером. Попробуйте позже.')
+    return null
   }
+}
 
-  if (response.status === 401) {
-    throw new DocumentApiError('Сессия истекла. Войдите снова.', 401)
+function cleanFilename(value: string) {
+  const filename = value.replace(/\\/g, '/').split('/').pop() || ''
+  return Array.from(filename).filter((character) => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127).join('').trim()
+}
+
+export function resumeName(resume: Resume) {
+  try {
+    return cleanFilename(decodeURIComponent(new URL(resume.file_url).pathname.split('/').pop() || '')) || 'Резюме'
+  } catch {
+    return 'Резюме'
   }
+}
 
-  if (!response.ok) {
-    const message = response.status === 422
-      ? path === '/resumes'
-        ? 'Файл должен быть действительным PDF или DOCX.'
-        : 'Проверьте текст вакансии.'
-      : response.status === 413
-        ? 'Файл слишком большой.'
-        : 'Не удалось сохранить данные. Попробуйте позже.'
-
-    throw new DocumentApiError(message, response.status)
+export function downloadName(disposition: string | null, fallback: string) {
+  const encoded = disposition?.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)?.[1]
+  if (encoded) {
+    try {
+      return cleanFilename(decodeURIComponent(encoded.trim())) || fallback
+    } catch {
+      return fallback
+    }
   }
-
-  return response
+  const plain = disposition?.match(/filename\s*=\s*(?:"([^"]+)"|([^;]+))/i)
+  return cleanFilename(plain?.[1] || plain?.[2] || '') || fallback
 }
 
 export async function addResume(file: File) {
   const body = new FormData()
   body.append('file', file)
-  await sendDocument('/resumes', body)
+  const response = await request('/resumes', { method: 'POST', body })
+  return resumeLocation(response.headers.get('Location'))
 }
 
-export async function addVacancy(text: string): Promise<Vacancy> {
-  const response = await sendDocument('/vacancies', JSON.stringify({ text }), 'application/json')
-  return response.json() as Promise<Vacancy>
+export const getResumes = (signal?: AbortSignal) => requestJson<Resume[]>('/resumes', { signal })
+export const getVacancies = (signal?: AbortSignal) => requestJson<Vacancy[]>('/vacancies', { signal })
+export const getVacancy = (id: string, signal?: AbortSignal) => requestJson<Vacancy>(`/vacancies/${id}`, { signal })
+export const addVacancy = (text: string) => requestJson<Vacancy>('/vacancies', { method: 'POST', json: { text } })
+
+export async function downloadResume(id: string, fallback: string, signal?: AbortSignal) {
+  const generation = getSession().generation
+  const response = await request(`/resumes/${id}`, { signal })
+  const blob = await response.blob()
+  if (signal?.aborted || generation !== getSession().generation) throw new ApiError('Скачивание отменено.')
+  const filename = downloadName(response.headers.get('Content-Disposition'), fallback)
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.append(link)
+  try {
+    link.click()
+  } finally {
+    link.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+  return filename
 }
