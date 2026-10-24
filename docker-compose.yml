@@ -1,4 +1,26 @@
 services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: resume-frontend:dev
+    container_name: resume_frontend
+    environment:
+      AUTH_API_URL: http://auth:8000
+      RESUME_API_URL: http://resume:8000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - auth
+      - resume
+    networks:
+      - auth-network
+      - resume-network
+    restart: on-failure
+
   auth:
     build:
       context: ./backend/auth
@@ -39,6 +61,8 @@ services:
     depends_on:
       resume-postgres:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     networks:
       - resume-network
     restart: on-failure
@@ -62,6 +86,22 @@ services:
       retries: 5
       start_period: 10s
     restart: on-failure
+
+  minio-init:
+    image: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    env_file:
+      - ./backend/resume/.env
+    entrypoint: [ "/bin/sh", "-c" ]
+    command:
+      - >-
+        mc alias set local http://minio:9000
+        "$${MINIO_ROOT_USER:-minioadmin}" "$${MINIO_ROOT_PASSWORD:-minioadmin}" &&
+        mc mb --ignore-existing "local/$${MINIO_BUCKET:-resumes}"
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - resume-network
 
   resume-postgres:
     image: pgvector/pgvector:pg16
