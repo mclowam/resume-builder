@@ -1,19 +1,56 @@
 # Frontend
 
-React + TypeScript + Vite.
+React + TypeScript + Vite. Код разделён на `src/app`, `pages`, `components`, `api`, `types`, `styles`.
 
-## Structure
+## Запуск
 
-- `src/app` — application entry and composition.
-- `src/pages` — screens.
-- `src/components` — reusable UI components.
-- `src/api` — HTTP requests.
-- `src/types` — shared TypeScript types.
-- `src/styles` — global styles.
-
-## Run
+Из `frontend`, с Node.js 22:
 
 ```powershell
-npm install
+npm ci
 npm run dev
 ```
+
+Vite проксирует `/auth` на `http://localhost:8001`, `/resumes` и `/vacancies` на `http://localhost:8002`. Адреса задаются через `AUTH_API_URL` и `RESUME_API_URL`. В существующем Docker Compose используются `http://auth:8000` и `http://resume:8000`; сети и Dockerfile сохранены. Токены передаются только в заголовке Authorization своего API.
+
+## Маршруты
+
+| Адрес | Страница |
+| --- | --- |
+| `/` | Пустая публичная главная |
+| `/login`, `/register` | Вход и регистрация |
+| `/my-resumes`, `/add-resume` | Свои резюме, скачивание и загрузка PDF/DOCX |
+| `/my-vacancies`, `/add-vacancy` | Свои вакансии и создание полным текстом |
+| `/my-vacancies/:id` | Полный текст вакансии |
+| `/profile` | Текущий пользователь |
+| `/users`, `/users/:id` | Список и карточка пользователя |
+
+Кроме главной, входа и регистрации, страницы требуют подтверждённой сессии. Неизвестный адрес показывает 404. UI-пути не пересекаются с API. History API поддерживает back/forward; Vite обслуживает прямое открытие вложенных страниц. При отдельной публикации `dist` сервер должен возвращать `index.html` для UI-маршрутов и отдельно проксировать API.
+
+## Поведение
+
+Используются публичные `POST /auth/register`, `/auth/login`, `/auth/refresh`; `GET /auth/me`, `/auth/users`, `/auth/users/:id`; `POST/GET /resumes`, `GET /resumes/:id`; `POST/GET /vacancies`, `GET /vacancies/:id`.
+
+Сессия хранится в `sessionStorage` и проверяется через `/auth/me`. Конкурентные 401 разделяют один refresh; исходный запрос повторяется максимум один раз. Неудачный refresh, включая серверный 500, завершает сессию. Запоздавшие ответы после выхода или смены аккаунта игнорируются. POST после сетевых ошибок и 5xx автоматически не повторяется: интерфейс предлагает сначала проверить список.
+
+Загрузка резюме принимает пустой ответ 201. Из Location извлекается только проверенный относительный путь; запросов к переданному сервером origin нет. Скачивание использует авторизованный fetch, Blob, имя из Content-Disposition и освобождение object URL. Название в списке берётся из последнего сегмента file_url; внутренний адрес и embedding не отображаются.
+
+Текст вакансии выводится как текст с сохранением переносов строк. Черновик и выбранный файл сохраняются только в памяти вкладки для того же пользователя при ошибках и повторном входе. Явный выход, смена аккаунта или перезагрузка страницы очищают черновики. Редактирование, удаление, runs и результаты генерации не реализованы в текущем публичном API.
+
+## Проверки
+
+```powershell
+npm run build
+npm run lint
+npm test
+npm run test:browser
+git diff --check
+```
+
+`npm test` проверяет HTTP-контракты с подменой fetch: конкурентные и запоздавшие 401, сбои refresh, logout/смену аккаунта, запрет повторов POST после неопределённого результата, пустой 201, Blob/имя файла/освобождение URL и разрешённые маршруты возврата.
+
+`npm run test:browser` использует установленный Google Chrome, запускает Vite на `127.0.0.1:5178` (или использует уже запущенный там сервер) и проверяет desktop и мобильный viewport. Ответы API подменяются Playwright. Проверяются регистрация, вход, PDF/DOCX с побайтовым сравнением скачанного файла, вакансии, профиль/пользователи, вложенные страницы, история, ошибки, черновики и истёкшая сессия. Скриншоты сохраняются в `test-results`. Это проверки фронтенда, а не интеграция с backend.
+
+Для интеграционной приёмки нужны работающие auth/resume, БД и MinIO: повторить сценарии на отдельной тестовой учётной записи без перехвата API, включая доступ к документам другого пользователя. При реализации живые API `localhost:8001/8002` и Docker daemon были недоступны; этот прогон не выполнен.
+
+В изолированной Windows-среде Node 20.17 обычные Vite build/dev блокировались чтением родительского `C:\Users\Maxim` (EPERM / Access denied). Production-сборка проверена с временной транспиляцией исходного Vite config в `.test-build/vite-check.mjs`, `resolve.preserveSymlinks: true` и командой `npm run build -- --configLoader native --config .test-build/vite-check.mjs`. Браузерный прогон использовал `npm run preview -- --host 127.0.0.1 --port 5178 --strictPort --configLoader native --config .test-build/vite-check.mjs`. Для Node установлен `NODE_OPTIONS=--preserve-symlinks --preserve-symlinks-main`, для Chrome TEMP/TMP указывают на `.test-build/tmp` внутри worktree. Штатная конфигурация Vite не изменялась.
