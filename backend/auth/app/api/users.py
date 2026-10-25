@@ -1,6 +1,6 @@
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
-from app.core.security.deps import get_current_user
+from app.core.security.deps import get_current_user, get_current_staff_user
 from app.schemas.users import UserCreateSchema, UserPostCreateSchema, UserLoginSchema, LoginResponseSchema, \
     UserResponseSchema, UserPayload, RefreshTokenSchema, UpdateUserSchema
 from app.services.login import LoginService
@@ -35,7 +35,7 @@ async def login(payload: UserLoginSchema,
 @api_v1_router.get("/users", response_model=list[UserResponseSchema])
 async def get_users(
         service: UserService = Depends(get_user_service),
-        _: UserPayload = Depends(get_current_user),
+        _: UserPayload = Depends(get_current_staff_user),
 ):
     result = await service.list_users()
 
@@ -45,7 +45,7 @@ async def get_users(
 async def detail_user(
         user_id: uuid.UUID,
         service: UserService = Depends(get_user_service),
-        _: UserPayload = Depends(get_current_user),
+        _: UserPayload = Depends(get_current_staff_user),
 ):
     result = await service.detail(id=user_id)
 

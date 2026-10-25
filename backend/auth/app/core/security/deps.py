@@ -39,3 +39,14 @@ async def get_current_user(
         )
     except (ValueError, TypeError):
         raise credentials_exception
+
+
+async def get_current_staff_user(
+    current_user: UserPayload = Depends(get_current_user),
+) -> UserPayload:
+    if not current_user.is_staff:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Staff access required",
+        )
+    return current_user
