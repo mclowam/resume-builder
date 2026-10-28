@@ -18,7 +18,8 @@ class VacancyService:
         return VacancyResponseSchema(
             id=vacancy.id,
             user_id=vacancy.user_id,
-            text=vacancy.text
+            text=vacancy.text,
+            embedding=vacancy.embedding
         )
 
     async def get_by_id(self, vacancy_id: uuid.UUID) -> VacancyResponseSchema:
