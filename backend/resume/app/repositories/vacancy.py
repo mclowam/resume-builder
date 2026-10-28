@@ -38,7 +38,8 @@ class VacancyRepository:
         return VacancyResponseSchema(
             id=vacancy.id,
             user_id=vacancy.user_id,
-            text=vacancy.text
+            text=vacancy.text,
+            embedding=vacancy.embedding
         )
 
     async def get_by_user_id(self, user_id: uuid.UUID) -> list[VacancyResponseSchema]:
@@ -46,7 +47,10 @@ class VacancyRepository:
         result = await self._session.execute(query)
 
         return [
-            VacancyResponseSchema(id=vacancy.id, user_id=vacancy.user_id, text=vacancy.text)
+            VacancyResponseSchema(
+                id=vacancy.id, user_id=vacancy.user_id,
+                text=vacancy.text, embedding=vacancy.embedding,
+            )
             for vacancy in result.scalars().all()
         ]
 
