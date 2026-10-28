@@ -1,0 +1,5 @@
+Python-разработчик
+
+Задачи: разрабатывать REST API на FastAPI, работать с PostgreSQL,
+писать SQL-запросы и миграции Alembic, покрывать код тестами pytest.
+Требования: опыт Python, FastAPI, PostgreSQL, Git и ревью кода.

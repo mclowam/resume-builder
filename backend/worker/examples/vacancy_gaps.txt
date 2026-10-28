@@ -1,0 +1,7 @@
+Python-разработчик
+
+Задачи: разрабатывать REST API на FastAPI, работать с PostgreSQL,
+писать тесты pytest, развёртывать сервисы в Kubernetes и AWS,
+поддерживать обработку событий через Kafka.
+Требования: Python, FastAPI, PostgreSQL, Git, Kubernetes, AWS, Kafka.
+Желателен опыт руководства командой из пяти разработчиков.

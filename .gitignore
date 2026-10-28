@@ -1,6 +1,7 @@
 /.tools/
 /graphify-out/
 **/__pycache__/
+/backend/worker/examples/results/
 .codex
 .agents
 scripts
