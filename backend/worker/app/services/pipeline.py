@@ -13,7 +13,9 @@ class PipelineService:
         self._document_service = document_service
         self._embedding_client = embedding_client
 
-    async def process(self, event: Event) -> DocumentEmbedding:
+    async def process(self, event: Event) -> DocumentEmbedding | None:
+        if await self._document_service.get_embedding(event) is not None:
+            return None
         document = await self._document_service.get_document(event)
         embedding = await self._embedding_client.embed(document.text)
         await self._document_service.set_embedding(document, embedding)

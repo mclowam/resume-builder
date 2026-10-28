@@ -19,6 +19,11 @@ class DocumentService:
         self._vacancy_client = vacancy_client
         self._text_extractor = text_extractor
 
+    async def get_embedding(self, event: Event) -> list[float] | None:
+        if isinstance(event, ResumeUploadedEvent):
+            return await self._resume_client.get_embedding(event.data.resume_id, event.data.user_id)
+        return await self._vacancy_client.get_embedding(event.data.vacancy_id, event.data.user_id)
+
     async def get_document(self, event: Event) -> DocumentText:
         if isinstance(event, ResumeUploadedEvent):
             document_id = event.data.resume_id
