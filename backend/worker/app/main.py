@@ -10,10 +10,12 @@ logger = logging.getLogger(__name__)
 async def main() -> None:
     async with get_event_consumer() as consumer, get_pipeline_service() as pipeline:
         while True:
-            event = await consumer.consume()
-            if event is None:
+            message = await consumer.consume()
+            if message is None:
                 continue
+            event, payload = message
             document = await pipeline.process(event)
+            await consumer.ack(payload)
             logger.info(
                 "Saved embedding for %s %s: model=%s, dimensions=%s",
                 document.document_type,

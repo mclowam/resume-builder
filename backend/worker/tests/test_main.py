@@ -14,6 +14,9 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
     async def test_closes_clients_on_processing_error(self):
         await self.run_worker(ValueError("Empty text"))
 
+    async def test_does_not_ack_cancelled_processing(self):
+        await self.run_worker(asyncio.CancelledError(), processing_error=True)
+
     async def test_closes_created_clients_on_startup_error(self):
         redis = SimpleNamespace(aclose=AsyncMock())
         resume = SimpleNamespace(close=AsyncMock())
@@ -50,20 +53,27 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
                 resume.close.assert_awaited_once()
                 vacancy.close.assert_awaited_once()
 
-    async def run_worker(self, error):
+    async def run_worker(self, error, processing_error=False):
         event = SimpleNamespace(event_type="resume.uploaded")
+        payload = b"original payload"
         redis = SimpleNamespace(aclose=AsyncMock())
         resume = SimpleNamespace(close=AsyncMock())
         vacancy = SimpleNamespace(close=AsyncMock())
         embedding = SimpleNamespace(close=AsyncMock())
-        consumer = SimpleNamespace(consume=AsyncMock(side_effect=[None, event, asyncio.CancelledError()]))
+        consumer = SimpleNamespace(
+            consume=AsyncMock(side_effect=[None, (event, payload), asyncio.CancelledError()]),
+            ack=AsyncMock(),
+        )
         document = SimpleNamespace(
             document_type="resume", document_id="resource-id",
             embedding_model="text-embedding-3-small", embedding=[0.1, -0.2],
         )
         pipeline = SimpleNamespace(process=AsyncMock(return_value=document))
-        if isinstance(error, ValueError):
+        if isinstance(error, ValueError) or processing_error:
             pipeline.process.side_effect = error
+        calls = Mock()
+        calls.attach_mock(pipeline.process, "process")
+        calls.attach_mock(consumer.ack, "ack")
         extractor = Mock()
         document_service = Mock()
 
@@ -88,6 +98,11 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
             embedding_client=embedding,
         )
         pipeline.process.assert_awaited_once_with(event)
+        if isinstance(error, ValueError) or processing_error:
+            consumer.ack.assert_not_awaited()
+        else:
+            consumer.ack.assert_awaited_once_with(payload)
+            self.assertEqual([call[0] for call in calls.mock_calls], ["process", "ack"])
         redis.aclose.assert_awaited_once()
         resume.close.assert_awaited_once()
         vacancy.close.assert_awaited_once()
