@@ -31,6 +31,14 @@ class VacancyHttpClient:
         response.raise_for_status()
         return response.json()
 
+    async def get_embedding(self, vacancy_id: uuid.UUID, user_id: uuid.UUID) -> list[float] | None:
+        response = await self._client.get(
+            f"/internal/vacancies/{vacancy_id}/embedding",
+            params={"user_id": str(user_id)},
+        )
+        response.raise_for_status()
+        return response.json()
+
     async def close(self) -> None:
         await self._client.aclose()
 
