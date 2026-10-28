@@ -3,6 +3,7 @@ import { ApiError, errorMessage, requestJson } from './client'
 import { clearSession, getSession, getTokens, setTokens, setUser } from './session'
 
 let restoring: Promise<void> | null = null
+let profileRequest = 0
 
 export function restoreSession() {
   if (restoring) return restoring
@@ -37,6 +38,12 @@ export async function login(credentials: Credentials) {
 
 export const logout = () => clearSession()
 export const register = (credentials: Credentials) => requestJson<{ user_id: string; username: string }>('/auth/register', { method: 'POST', json: credentials, public: true })
-export const getProfile = (signal?: AbortSignal) => requestJson<Profile>('/auth/me', { signal })
+export async function getProfile(signal?: AbortSignal) {
+  const generation = getSession().generation
+  const request = ++profileRequest
+  const user = await requestJson<Profile>('/auth/me', { signal })
+  if (!signal?.aborted && request === profileRequest && getSession().status === 'authenticated') setUser(user, generation)
+  return user
+}
 export const getUsers = (signal?: AbortSignal) => requestJson<User[]>('/auth/users', { signal })
 export const getUser = (id: string, signal?: AbortSignal) => requestJson<User>(`/auth/users/${id}`, { signal })

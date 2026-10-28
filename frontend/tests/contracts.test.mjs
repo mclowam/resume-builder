@@ -224,3 +224,44 @@ test('UI navigation avoids API prefixes and only accepts allowed return paths', 
   for (const path of ['//evil.invalid', 'https://evil.invalid', '/\\evil.invalid', '/auth/me', '/login', '/unknown', '/users/not-a-uuid', '/my-resumes?next=//evil.invalid']) assert.equal(routes.safeReturnPath(path), '/my-resumes')
   assert.equal(routes.matchRoute('/missing'), null)
 })
+
+test('user routes require staff while profile and documents do not', () => {
+  for (const path of ['/users', `/users/${profile.user_id}`]) assert.equal(routes.matchRoute(path).staff, true)
+  for (const path of ['/profile', '/my-resumes', '/my-vacancies']) assert.equal(routes.matchRoute(path).staff, false)
+})
+
+test('newest me response revokes staff and older responses cannot restore it', async () => {
+  session.setUser({ ...profile, is_staff: true }, session.getSession().generation)
+  const late = deferred()
+  let calls = 0
+  globalThis.fetch = async () => ++calls === 1 ? late.promise : json(profile)
+  const first = auth.getProfile()
+  await auth.getProfile()
+  assert.equal(session.getSession().user.is_staff, false)
+  late.resolve(json({ ...profile, is_staff: true }))
+  await first
+  assert.equal(session.getSession().user.is_staff, false)
+})
+
+test('late me response cannot change another account', async () => {
+  const late = deferred()
+  globalThis.fetch = () => late.promise
+  const result = auth.getProfile().catch((error) => error)
+  auth.logout()
+  session.setTokens(newTokens, session.getSession().generation)
+  session.setUser({ ...profile, username: 'other' }, session.getSession().generation)
+  late.resolve(json({ ...profile, is_staff: true }))
+  assert.ok(await result instanceof client.ApiError)
+  assert.equal(session.getSession().user.username, 'other')
+  assert.equal(session.getSession().user.is_staff, false)
+})
+
+test('users 403 does not refresh or terminate an authenticated session', async () => {
+  const calls = []
+  globalThis.fetch = async (path) => { calls.push(path); return json({}, 403) }
+  await assert.rejects(auth.getUsers(), { status: 403 })
+  await assert.rejects(auth.getUser(profile.user_id), { status: 403 })
+  assert.deepEqual(calls, ['/auth/users', `/auth/users/${profile.user_id}`])
+  assert.equal(session.getSession().status, 'authenticated')
+  assert.equal(session.getTokens().access_token, 'old')
+})

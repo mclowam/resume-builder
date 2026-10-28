@@ -15,6 +15,7 @@ import ProfilePage from '../pages/ProfilePage'
 import UsersPage from '../pages/UsersPage'
 import UserPage from '../pages/UserPage'
 import NotFoundPage from '../pages/NotFoundPage'
+import ForbiddenPage from '../pages/ForbiddenPage'
 import { useLocation } from './navigation'
 import { matchRoute } from './routes'
 import { useSession } from './useSession'
@@ -29,17 +30,17 @@ function App() {
   useEffect(() => { void restoreSession() }, [])
   useEffect(() => { if (session.user) getDraft(session.user.user_id) }, [session.user])
   useEffect(() => {
-    const heading = document.querySelector<HTMLHeadingElement>('h1')
-    document.title = heading ? `${heading.textContent} · Resume Builder` : 'Resume Builder'
-    heading?.focus()
+    if (path === '/' || session.status === 'checking') document.title = 'Resume Builder'
     window.scrollTo(0, 0)
-  }, [location, session.status])
+  }, [location, path, session.status])
 
   let page
   if (session.status === 'checking' && route?.path !== '/') {
     page = <main id="main" className="page"><Loading text="Проверка сессии…" /></main>
-  } else if (route?.protected && !session.user) {
+  } else if (route?.protected && session.status !== 'authenticated') {
     page = <LoginRequired path={path} />
+  } else if (route?.staff && session.user?.is_staff !== true) {
+    page = <ForbiddenPage />
   } else {
     switch (route?.path) {
       case '/': page = <HomePage />; break
@@ -57,7 +58,7 @@ function App() {
     }
   }
 
-  return <><Header path={path} /><div key={`${location}:${route?.protected ? session.generation : 'public'}`}>{page}</div></>
+  return <Header path={path}><div key={`${location}:${route?.protected ? `${session.generation}:${session.user?.is_staff}` : 'public'}`}>{page}</div></Header>
 }
 
 export default App

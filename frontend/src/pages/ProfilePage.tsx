@@ -1,3 +1,4 @@
+import { Button } from '@mantine/core'
 import { getProfile } from '../api/auth'
 import { useResource } from '../app/useResource'
 import { ErrorNotice, Loading } from '../components/Feedback'
@@ -7,6 +8,7 @@ import UserDetails from '../components/UserDetails'
 function ProfilePage() {
   const resource = useResource(getProfile)
   return <Page title="Профиль" description="Данные текущего аккаунта.">
+    <div className="toolbar"><Button variant="default" onClick={resource.reload} disabled={resource.loading}>Обновить профиль</Button></div>
     <ErrorNotice error={resource.error} retry={resource.reload} />
     {resource.loading && <Loading />}
     {resource.data && <UserDetails user={resource.data} />}

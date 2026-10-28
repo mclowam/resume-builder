@@ -1,3 +1,4 @@
+import { Alert, Button, Paper } from '@mantine/core'
 import { useEffect, useRef, useState } from 'react'
 import { downloadResume, getResumes, resumeName } from '../api/documents'
 import { useResource } from '../app/useResource'
@@ -33,15 +34,15 @@ function ResumesPage() {
   }
 
   return <Page title="Мои резюме" description="Загруженные документы вашего аккаунта.">
-    <div className="toolbar"><Link className="button button-primary" href="/add-resume">Добавить резюме</Link><button className="button button-outline" onClick={resource.reload} disabled={resource.loading}>Обновить список</button></div>
-    {new URLSearchParams(window.location.search).has('created') && <p className="notice notice-success" role="status">Резюме загружено.</p>}
+    <div className="toolbar"><Button component={Link} href="/add-resume">Добавить резюме</Button><Button variant="default" onClick={resource.reload} disabled={resource.loading}>Обновить список</Button></div>
+    {new URLSearchParams(window.location.search).has('created') && <Alert color="teal" role="status" mb="lg">Резюме загружено.</Alert>}
     <ErrorNotice error={resource.error} retry={resource.reload} />
     <ErrorNotice error={downloadError} />
-    {downloaded && <p className="notice notice-success" role="status">Файл «{downloaded}» передан браузеру для скачивания.</p>}
+    {downloaded && <Alert color="teal" role="status" mb="lg">Файл «{downloaded}» передан браузеру для скачивания.</Alert>}
     {resource.loading && <Loading />}
     {resource.data?.length === 0 && !resource.loading && !resource.error && <EmptyState title="Пока нет резюме" description="Добавьте первый PDF или DOCX, чтобы он появился здесь." />}
     {!!resource.data?.length && <ul className="resource-list" aria-label="Резюме" aria-busy={resource.loading}>
-      {[...resource.data].sort((a, b) => b.created_at.localeCompare(a.created_at)).map((resume) => <li key={resume.id} className="resource-row"><div className="resource-copy"><h2>{resumeName(resume)}</h2><p className="metadata">Загружено: <time dateTime={resume.created_at}>{Number.isNaN(Date.parse(resume.created_at)) ? 'Дата недоступна' : new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(resume.created_at))}</time></p></div><button className="button button-outline" disabled={downloading !== null} onClick={() => void download(resume)} aria-label={`Скачать ${resumeName(resume)}`}>{downloading === resume.id ? 'Скачивание…' : 'Скачать'}</button></li>)}
+      {[...resource.data].sort((a, b) => b.created_at.localeCompare(a.created_at)).map((resume) => <Paper component="li" key={resume.id} className="resource-row"><div className="resource-copy"><h2>{resumeName(resume)}</h2><p className="metadata">Загружено: <time dateTime={resume.created_at}>{Number.isNaN(Date.parse(resume.created_at)) ? 'Дата недоступна' : new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(resume.created_at))}</time></p></div><Button variant="default" disabled={downloading !== null} onClick={() => void download(resume)} aria-label={`Скачать ${resumeName(resume)}`}>{downloading === resume.id ? 'Скачивание…' : 'Скачать'}</Button></Paper>)}
     </ul>}
   </Page>
 }

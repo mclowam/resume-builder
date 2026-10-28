@@ -1,4 +1,6 @@
 import { useRef, useState } from 'react'
+import { Button, Input, Text, ThemeIcon } from '@mantine/core'
+import Icon from '../components/Icon'
 import type { FormEvent } from 'react'
 import { addResume } from '../api/documents'
 import { navigate } from '../app/navigation'
@@ -35,13 +37,16 @@ function AddResumePage({ userId }: { userId: string }) {
   }
 
   return <Page title="Добавить резюме" description="Загрузите готовый документ целиком." back={{ href: '/my-resumes', label: 'Мои резюме' }} narrow>
-    <form onSubmit={submit} aria-busy={pending}>
-      <label htmlFor="resume-file">Файл резюме</label>
-      <input id="resume-file" name="file" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required={!file} disabled={pending} aria-describedby="file-help" onChange={(event) => { const selected = event.target.files?.[0] || null; setFile(selected); getDraft(userId).resume = selected; setError(null) }} />
-      <p className="field-help" id="file-help">PDF или DOCX, без пароля. После загрузки документ появится в списке.</p>
-      {file && <p className="selected-file">Выбран: {file.name}</p>}
+    <form onSubmit={submit} aria-busy={pending} className="form-stack">
+      <div className="file-field">
+        <ThemeIcon size={44} variant="light" mb="md"><Icon name="upload" size={24} /></ThemeIcon>
+        <Input.Wrapper id="resume-file" label="Файл резюме" description="PDF или DOCX, без пароля. После загрузки документ появится в списке." required>
+          <input className="file-input" id="resume-file" name="file" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required={!file} disabled={pending} aria-describedby="resume-file-description" onChange={(event) => { const selected = event.target.files?.[0] || null; setFile(selected); getDraft(userId).resume = selected; setError(null) }} />
+        </Input.Wrapper>
+      </div>
+      {file && <Text className="selected-file" size="sm">Выбран: {file.name}</Text>}
       <ErrorNotice error={error} listPath="/my-resumes" />
-      <button className="button button-primary" type="submit" disabled={pending}>{pending ? 'Загрузка…' : 'Загрузить резюме'}</button>
+      <Button type="submit" loading={pending} disabled={pending}>{pending ? 'Загрузка…' : 'Загрузить резюме'}</Button>
     </form>
   </Page>
 }

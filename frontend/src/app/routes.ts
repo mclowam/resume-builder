@@ -3,9 +3,9 @@ const detail = new RegExp(`^/(my-vacancies|users)/(${uuid})$`, 'i')
 const protectedPaths = ['/my-resumes', '/my-vacancies', '/add-resume', '/add-vacancy', '/profile', '/users']
 
 export function matchRoute(path: string) {
-  if (['/', '/login', '/register', ...protectedPaths].includes(path)) return { path, id: null, protected: protectedPaths.includes(path) }
+  if (['/', '/login', '/register', ...protectedPaths].includes(path)) return { path, id: null, protected: protectedPaths.includes(path), staff: path === '/users' }
   const match = path.match(detail)
-  return match ? { path: `/${match[1]}/:id`, id: match[2], protected: true } : null
+  return match ? { path: `/${match[1]}/:id`, id: match[2], protected: true, staff: match[1] === 'users' } : null
 }
 
 export function safeReturnPath(value: string | null) {
