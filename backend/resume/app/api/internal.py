@@ -36,6 +36,19 @@ async def get_resume_file(
     )
 
 
+@api_v1_router.get("/resumes/{resume_id}/embedding", response_model=list[float] | None)
+async def get_resume_embedding(
+        resume_id: uuid.UUID,
+        user_id: uuid.UUID,
+        service: ResumeService = Depends(get_resume_service),
+):
+    resume = await service.get_by_id(resume_id=resume_id)
+    if resume.user_id != user_id:
+        raise HTTPException(detail="Resume not found", status_code=404)
+
+    return resume.embedding
+
+
 @api_v1_router.patch("/resumes/{resume_id}", response_model=ResumeResponseSchema, status_code=200)
 async def set_embedding_resume(
         resume_id: uuid.UUID,
@@ -62,6 +75,19 @@ async def get_vacancy(
         raise HTTPException(detail="Vacancy not found", status_code=404)
 
     return result
+
+
+@api_v1_router.get("/vacancies/{vacancy_id}/embedding", response_model=list[float] | None)
+async def get_vacancy_embedding(
+        vacancy_id: uuid.UUID,
+        user_id: uuid.UUID,
+        service: VacancyService = Depends(get_vacancy_service),
+):
+    vacancy = await service.get_by_id(vacancy_id=vacancy_id)
+    if vacancy.user_id != user_id:
+        raise HTTPException(detail="Vacancy not found", status_code=404)
+
+    return vacancy.embedding
 
 
 @api_v1_router.patch("/vacancies/{vacancy_id}", response_model=VacancyResponseSchema, status_code=200)
