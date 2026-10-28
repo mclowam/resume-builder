@@ -17,6 +17,8 @@ async def main() -> None:
                 event, payload = message
                 document = await pipeline.process(event)
                 await consumer.ack(payload)
+                if document is None:
+                    continue
                 logger.info(
                     "Saved embedding for %s %s: model=%s, dimensions=%s",
                     document.document_type,
