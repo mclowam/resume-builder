@@ -1,7 +1,7 @@
 import asyncio
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, call, patch
 
 from app.main import main
 from app.core.core import settings
@@ -9,13 +9,19 @@ from app.core.core import settings
 
 class MainTests(unittest.IsolatedAsyncioTestCase):
     async def test_processes_event_and_closes_clients(self):
-        await self.run_worker(asyncio.CancelledError())
+        await self.run_worker()
 
-    async def test_closes_clients_on_processing_error(self):
+    async def test_continues_after_processing_error(self):
         await self.run_worker(ValueError("Empty text"))
 
+    async def test_continues_after_consume_error(self):
+        await self.run_worker(ConnectionError("Redis unavailable"), error_stage="consume")
+
+    async def test_continues_after_ack_error(self):
+        await self.run_worker(ConnectionError("Redis unavailable"), error_stage="ack")
+
     async def test_does_not_ack_cancelled_processing(self):
-        await self.run_worker(asyncio.CancelledError(), processing_error=True)
+        await self.run_worker(asyncio.CancelledError())
 
     async def test_closes_created_clients_on_startup_error(self):
         redis = SimpleNamespace(aclose=AsyncMock())
@@ -53,9 +59,11 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
                 resume.close.assert_awaited_once()
                 vacancy.close.assert_awaited_once()
 
-    async def run_worker(self, error, processing_error=False):
+    async def run_worker(self, error=None, error_stage="process"):
         event = SimpleNamespace(event_type="resume.uploaded")
+        failed_event = SimpleNamespace(event_type="vacancy.uploaded")
         payload = b"original payload"
+        failed_payload = b"failed payload"
         redis = SimpleNamespace(aclose=AsyncMock())
         resume = SimpleNamespace(close=AsyncMock())
         vacancy = SimpleNamespace(close=AsyncMock())
@@ -69,8 +77,29 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
             embedding_model="text-embedding-3-small", embedding=[0.1, -0.2],
         )
         pipeline = SimpleNamespace(process=AsyncMock(return_value=document))
-        if isinstance(error, ValueError) or processing_error:
+        process_calls = [call(event)]
+        ack_calls = [call(payload)]
+        order = ["process", "ack"]
+        if isinstance(error, Exception):
+            if error_stage == "consume":
+                consumer.consume.side_effect = [error, (event, payload), asyncio.CancelledError()]
+                order = ["sleep", "process", "ack"]
+            else:
+                consumer.consume.side_effect = [
+                    (failed_event, failed_payload), (event, payload), asyncio.CancelledError(),
+                ]
+                process_calls.insert(0, call(failed_event))
+                if error_stage == "process":
+                    pipeline.process.side_effect = [error, document]
+                    order = ["process", "sleep", "process", "ack"]
+                else:
+                    consumer.ack.side_effect = [error, None]
+                    ack_calls.insert(0, call(failed_payload))
+                    order = ["process", "ack", "sleep", "process", "ack"]
+        elif error is not None:
             pipeline.process.side_effect = error
+            ack_calls = []
+            order = ["process"]
         calls = Mock()
         calls.attach_mock(pipeline.process, "process")
         calls.attach_mock(consumer.ack, "ack")
@@ -86,8 +115,11 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
             patch("app.use_cases.pipeline.TextExtractor", return_value=extractor),
             patch("app.use_cases.pipeline.DocumentService", return_value=document_service) as document_factory,
             patch("app.use_cases.pipeline.PipelineService", return_value=pipeline) as factory,
+            patch("app.main.asyncio.sleep", new_callable=AsyncMock) as sleep,
+            patch("app.main.logger.exception") as log_error,
         ):
-            with self.assertRaises(type(error)):
+            calls.attach_mock(sleep, "sleep")
+            with self.assertRaises(asyncio.CancelledError):
                 await main()
 
         document_factory.assert_called_once_with(
@@ -97,12 +129,15 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
             document_service=document_service,
             embedding_client=embedding,
         )
-        pipeline.process.assert_awaited_once_with(event)
-        if isinstance(error, ValueError) or processing_error:
-            consumer.ack.assert_not_awaited()
+        self.assertEqual(pipeline.process.await_args_list, process_calls)
+        self.assertEqual(consumer.ack.await_args_list, ack_calls)
+        self.assertEqual([item[0] for item in calls.mock_calls], order)
+        if isinstance(error, Exception):
+            sleep.assert_awaited_once_with(5)
+            log_error.assert_called_once()
         else:
-            consumer.ack.assert_awaited_once_with(payload)
-            self.assertEqual([call[0] for call in calls.mock_calls], ["process", "ack"])
+            sleep.assert_not_awaited()
+            log_error.assert_not_called()
         redis.aclose.assert_awaited_once()
         resume.close.assert_awaited_once()
         vacancy.close.assert_awaited_once()
