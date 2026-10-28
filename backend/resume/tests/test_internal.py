@@ -55,6 +55,7 @@ class InternalTests(unittest.IsolatedAsyncioTestCase):
             f"/internal/resumes/{self.resume.id}",
             f"/internal/vacancies/{self.vacancy.id}",
         )
+        self.embedding_paths = tuple(f"{path}/embedding" for path in self.paths)
         token_patch = patch.object(settings, "WORKER_API_TOKEN", "test-worker-token")
         token_patch.start()
         self.addCleanup(token_patch.stop)
@@ -84,7 +85,7 @@ class InternalTests(unittest.IsolatedAsyncioTestCase):
         return response["status"], dict(response["headers"]), body
 
     async def test_invalid_token_rejected_before_resource_access(self):
-        for path in self.paths:
+        for path in self.paths + self.embedding_paths:
             for token in (None, "", "wrong-token"):
                 with self.subTest(path=path, token=token):
                     status, _, _ = await self.request(path, token=token)
@@ -96,7 +97,7 @@ class InternalTests(unittest.IsolatedAsyncioTestCase):
     async def test_disabled_worker_access(self):
         for expected in (None, ""):
             with patch.object(settings, "WORKER_API_TOKEN", expected):
-                for path in self.paths:
+                for path in self.paths + self.embedding_paths:
                     with self.subTest(path=path, expected=expected):
                         status, _, _ = await self.request(path)
                         self.assertEqual(status, 503)
@@ -117,6 +118,21 @@ class InternalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body), self.vacancy.model_dump(mode="json"))
         self.vacancy_repository.get_by_id.assert_awaited_once_with(self.vacancy.id)
+
+    async def test_worker_reads_saved_embedding_without_downloading_file(self):
+        for path, repository in zip(
+            self.embedding_paths, (self.resume_repository, self.vacancy_repository),
+        ):
+            for embedding in ([0.1, -0.2], [], None):
+                with self.subTest(path=path, embedding=embedding):
+                    repository.get_by_id.return_value = SimpleNamespace(
+                        user_id=self.user_id, embedding=embedding,
+                    )
+                    status, _, body = await self.request(path)
+
+                    self.assertEqual(status, 200)
+                    self.assertEqual(json.loads(body), embedding)
+        self.storage.get_bytes.assert_not_awaited()
 
     async def test_worker_updates_embedding_without_user_jwt(self):
         status, _, _ = await self.request(
@@ -197,7 +213,7 @@ class InternalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status, 404)
 
     async def test_wrong_owner_hidden(self):
-        for path in self.paths:
+        for path in self.paths + self.embedding_paths:
             with self.subTest(path=path):
                 status, _, _ = await self.request(path, query=f"user_id={uuid.uuid4()}")
                 self.assertEqual(status, 404)
@@ -206,14 +222,14 @@ class InternalTests(unittest.IsolatedAsyncioTestCase):
     async def test_missing_resources_hidden(self):
         self.resume_repository.get_by_id.return_value = None
         self.vacancy_repository.get_by_id.return_value = None
-        for path in self.paths:
+        for path in self.paths + self.embedding_paths:
             with self.subTest(path=path):
                 status, _, _ = await self.request(path)
                 self.assertEqual(status, 404)
         self.storage.get_bytes.assert_not_awaited()
 
     async def test_user_id_required_and_validated(self):
-        for path in self.paths:
+        for path in self.paths + self.embedding_paths:
             for query in ("", "user_id=invalid"):
                 with self.subTest(path=path, query=query):
                     status, _, _ = await self.request(path, query=query)

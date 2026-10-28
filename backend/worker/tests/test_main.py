@@ -23,6 +23,9 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
     async def test_does_not_ack_cancelled_processing(self):
         await self.run_worker(asyncio.CancelledError())
 
+    async def test_acknowledges_skipped_event_without_saved_log(self):
+        await self.run_worker(skipped=True)
+
     async def test_closes_created_clients_on_startup_error(self):
         redis = SimpleNamespace(aclose=AsyncMock())
         resume = SimpleNamespace(close=AsyncMock())
@@ -59,7 +62,7 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
                 resume.close.assert_awaited_once()
                 vacancy.close.assert_awaited_once()
 
-    async def run_worker(self, error=None, error_stage="process"):
+    async def run_worker(self, error=None, error_stage="process", skipped=False):
         event = SimpleNamespace(event_type="resume.uploaded")
         failed_event = SimpleNamespace(event_type="vacancy.uploaded")
         payload = b"original payload"
@@ -76,6 +79,8 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
             document_type="resume", document_id="resource-id",
             embedding_model="text-embedding-3-small", embedding=[0.1, -0.2],
         )
+        if skipped:
+            document = None
         pipeline = SimpleNamespace(process=AsyncMock(return_value=document))
         process_calls = [call(event)]
         ack_calls = [call(payload)]
@@ -117,6 +122,7 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
             patch("app.use_cases.pipeline.PipelineService", return_value=pipeline) as factory,
             patch("app.main.asyncio.sleep", new_callable=AsyncMock) as sleep,
             patch("app.main.logger.exception") as log_error,
+            patch("app.main.logger.info") as log_info,
         ):
             calls.attach_mock(sleep, "sleep")
             with self.assertRaises(asyncio.CancelledError):
@@ -138,6 +144,8 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
         else:
             sleep.assert_not_awaited()
             log_error.assert_not_called()
+        if skipped:
+            log_info.assert_not_called()
         redis.aclose.assert_awaited_once()
         resume.close.assert_awaited_once()
         vacancy.close.assert_awaited_once()

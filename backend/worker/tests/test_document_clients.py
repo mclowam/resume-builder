@@ -54,6 +54,40 @@ class DocumentClientTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(request.headers["X-Worker-Token"], "test-worker-token")
                 self.assertEqual(json.loads(request.content), {"embedding": [0.1, -0.2]})
 
+    async def test_gets_embedding_for_owner(self):
+        for client_type, resource in (
+            (ResumeHttpClient, "resumes"), (VacancyHttpClient, "vacancies"),
+        ):
+            for embedding in (None, [], [0.1, -0.2]):
+                with self.subTest(resource=resource, embedding=embedding):
+                    requests = []
+
+                    def handler(request):
+                        requests.append(request)
+                        return httpx.Response(200, content=json.dumps(embedding))
+
+                    client = self.create_client(client_type, handler)
+
+                    self.assertEqual(await client.get_embedding(self.resource_id, self.user_id), embedding)
+                    self.assertEqual(len(requests), 1)
+                    self.assertEqual(requests[0].method, "GET")
+                    self.assertEqual(
+                        str(requests[0].url),
+                        f"http://resume:8000/internal/{resource}/{self.resource_id}/embedding?user_id={self.user_id}",
+                    )
+                    self.assertEqual(requests[0].headers["X-Worker-Token"], "test-worker-token")
+
+    async def test_propagates_embedding_lookup_errors(self):
+        for client_type in (ResumeHttpClient, VacancyHttpClient):
+            for status in (401, 404, 500):
+                with self.subTest(client=client_type.__name__, status=status):
+                    client = self.create_client(
+                        client_type, lambda request: httpx.Response(status, text="Failed"),
+                    )
+
+                    with self.assertRaises(httpx.HTTPStatusError):
+                        await client.get_embedding(self.resource_id, self.user_id)
+
     async def test_propagates_patch_status_errors(self):
         for client_type in (ResumeHttpClient, VacancyHttpClient):
             for status in (401, 404, 500):

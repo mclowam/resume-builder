@@ -14,6 +14,8 @@ class PipelineServiceTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.resume_client = AsyncMock()
         self.vacancy_client = AsyncMock()
+        self.resume_client.get_embedding.return_value = None
+        self.vacancy_client.get_embedding.return_value = None
         self.extractor = Mock()
         self.embedding_client = AsyncMock()
         self.embedding_client.model = "text-embedding-3-small"
@@ -32,6 +34,68 @@ class PipelineServiceTests(unittest.IsolatedAsyncioTestCase):
             event_type="vacancy.uploaded",
             data={"vacancy_id": self.resource_id, "user_id": self.user_id},
         )
+
+    async def test_skips_existing_embeddings(self):
+        self.resume_client.get_resume.return_value = b"resume file"
+        self.extractor.extract.return_value = "Full resume text"
+        self.vacancy_client.get_vacancy.return_value = {"text": "Full vacancy text"}
+        for event, client in (
+            (self.resume_event, self.resume_client),
+            (self.vacancy_event, self.vacancy_client),
+        ):
+            for embedding in ([0.1, -0.2], []):
+                with self.subTest(event_type=event.event_type, embedding=embedding):
+                    client.get_embedding.return_value = embedding
+
+                    self.assertIsNone(await self.pipeline.process(event))
+
+                    client.get_embedding.assert_awaited_with(self.resource_id, self.user_id)
+        self.resume_client.get_resume.assert_not_awaited()
+        self.vacancy_client.get_vacancy.assert_not_awaited()
+        self.extractor.extract.assert_not_called()
+        self.embedding_client.embed.assert_not_awaited()
+        self.assert_no_embeddings_saved()
+
+    async def test_repeated_event_does_not_generate_embedding_again(self):
+        saved_embedding = None
+
+        async def get_embedding(*args):
+            return saved_embedding
+
+        async def set_embedding(*, vacancy_id, user_id, data):
+            nonlocal saved_embedding
+            saved_embedding = data.embedding
+
+        self.vacancy_client.get_embedding.side_effect = get_embedding
+        self.vacancy_client.set_embedding.side_effect = set_embedding
+        self.vacancy_client.get_vacancy.return_value = {"text": "Full vacancy text"}
+
+        first = await self.pipeline.process(self.vacancy_event)
+        second = await self.pipeline.process(self.vacancy_event)
+
+        self.assertEqual(first.embedding, [0.1, -0.2])
+        self.assertIsNone(second)
+        self.embedding_client.embed.assert_awaited_once_with("Full vacancy text")
+        self.vacancy_client.get_vacancy.assert_awaited_once()
+        self.vacancy_client.set_embedding.assert_awaited_once()
+
+    async def test_propagates_embedding_lookup_error(self):
+        for event, client in (
+            (self.resume_event, self.resume_client),
+            (self.vacancy_event, self.vacancy_client),
+        ):
+            with self.subTest(event_type=event.event_type):
+                error = httpx.ReadTimeout("Timed out")
+                client.get_embedding.side_effect = error
+
+                with self.assertRaises(httpx.ReadTimeout) as raised:
+                    await self.pipeline.process(event)
+
+                self.assertIs(raised.exception, error)
+        self.resume_client.get_resume.assert_not_awaited()
+        self.vacancy_client.get_vacancy.assert_not_awaited()
+        self.embedding_client.embed.assert_not_awaited()
+        self.assert_no_embeddings_saved()
 
     async def test_extracts_full_resume_text(self):
         self.resume_client.get_resume.return_value = b"resume file"
