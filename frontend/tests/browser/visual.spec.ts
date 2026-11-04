@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { mockApi, userId, vacancyId } from './fixtures'
-import { noOverflow, openNavigation } from './helpers'
+import { noOverflow, openNavigation, navigationLink } from './helpers'
 
 test('guest pages and form focus', async ({ page }, testInfo) => {
   await mockApi(page, 'anonymous')
@@ -61,7 +61,7 @@ test('staff list, detail and navigation at each viewport', async ({ page }, test
   await noOverflow(page)
   await page.screenshot({ path: testInfo.outputPath('users.png'), fullPage: true, animations: 'disabled' })
   await openNavigation(page)
-  await expect(page.getByRole('navigation', { name: 'Основная навигация' }).getByRole('link', { name: 'Пользователи' })).toBeVisible()
+  await expect(navigationLink(page, 'Пользователи')).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('staff-navigation.png'), fullPage: true, animations: 'disabled' })
   if (await page.getByRole('dialog').isVisible()) await page.keyboard.press('Escape')
   await page.getByRole('link', { name: 'Открыть', exact: true }).click()
