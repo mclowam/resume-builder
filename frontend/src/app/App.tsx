@@ -4,6 +4,9 @@ import Header from '../components/Header'
 import LoginRequired from '../components/LoginRequired'
 import { Loading } from '../components/Feedback'
 import HomePage from '../pages/HomePage'
+import WorkspacePage from '../pages/WorkspacePage'
+import VersionsPage from '../pages/VersionsPage'
+import AdaptationPage from '../pages/AdaptationPage'
 import LoginPage from '../pages/LoginPage'
 import RegisterPage from '../pages/RegisterPage'
 import AddResumePage from '../pages/AddResumePage'
@@ -43,7 +46,10 @@ function App() {
     page = <ForbiddenPage />
   } else {
     switch (route?.path) {
-      case '/': page = <HomePage />; break
+      case '/': page = session.user ? <WorkspacePage userId={session.user.user_id} /> : <HomePage />; break
+      case '/workspace': page = <WorkspacePage userId={session.user!.user_id} />; break
+      case '/my-versions': page = <VersionsPage userId={session.user!.user_id} />; break
+      case '/my-versions/:id': page = <AdaptationPage id={route.id!} userId={session.user!.user_id} />; break
       case '/login': page = <LoginPage />; break
       case '/register': page = <RegisterPage />; break
       case '/my-resumes': page = <ResumesPage />; break
@@ -58,7 +64,7 @@ function App() {
     }
   }
 
-  return <Header path={path}><div key={`${location}:${route?.protected ? `${session.generation}:${session.user?.is_staff}` : 'public'}`}>{page}</div></Header>
+  return <Header path={path}><div key={`${location}:${route?.protected || path === '/' ? `${session.generation}:${session.user?.user_id}:${session.user?.is_staff}` : 'public'}`}>{page}</div></Header>
 }
 
 export default App
