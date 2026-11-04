@@ -12,6 +12,7 @@ export default defineConfig(({ mode }) => {
         '/auth': authApiUrl,
         '/resumes': resumeApiUrl,
         '/vacancies': resumeApiUrl,
+        '/adaptations': resumeApiUrl,
       },
     },
   }
