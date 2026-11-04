@@ -5,7 +5,7 @@ from fastapi import HTTPException
 from app.interfaces.adaptation import IAdaptation
 from app.interfaces.resume import IResume
 from app.interfaces.vacancy import IVacancy
-from app.schemas.adaptation import AdaptationCreateSchema, AdaptationResponseSchema
+from app.schemas.adaptation import AdaptationCreateSchema, AdaptationResponseSchema, AdaptationFinishSchema
 
 
 class AdaptationService:
@@ -35,4 +35,17 @@ class AdaptationService:
         if adaptation is None:
             raise HTTPException(status_code=404, detail="Adaptation not found")
 
+        return adaptation
+
+    async def claim(self, adaptation_id: uuid.UUID, user_id: uuid.UUID) -> AdaptationResponseSchema | None:
+        await self.get_by_id(adaptation_id, user_id)
+        return await self._adaptation_repo.claim(adaptation_id, user_id)
+
+    async def finish(
+            self, adaptation_id: uuid.UUID, user_id: uuid.UUID, data: AdaptationFinishSchema,
+    ) -> AdaptationResponseSchema:
+        await self.get_by_id(adaptation_id, user_id)
+        adaptation = await self._adaptation_repo.finish(adaptation_id, user_id, data)
+        if adaptation is None:
+            raise HTTPException(status_code=409, detail="Adaptation is not running")
         return adaptation
