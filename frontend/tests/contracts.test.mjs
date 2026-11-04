@@ -3,7 +3,7 @@ import { beforeEach, test } from 'node:test'
 import { readFile, mkdir, writeFile } from 'node:fs/promises'
 import ts from 'typescript'
 
-for (const name of ['api/session', 'api/client', 'api/auth', 'api/documents', 'app/routes']) {
+for (const name of ['api/session', 'api/client', 'api/auth', 'api/documents', 'app/routes', 'app/drafts']) {
   const source = await readFile(new URL(`../src/${name}.ts`, import.meta.url), 'utf8')
   const output = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 } }).outputText
     .replace(/from '(\.[^']+)'/g, "from '$1.js'")
@@ -19,6 +19,7 @@ const client = await import('../.test-build/api/client.js')
 const auth = await import('../.test-build/api/auth.js')
 const documents = await import('../.test-build/api/documents.js')
 const routes = await import('../.test-build/app/routes.js')
+const drafts = await import('../.test-build/app/drafts.js')
 const oldTokens = { access_token: 'old', refresh_token: 'refresh-old', token_type: 'bearer' }
 const newTokens = { access_token: 'new', refresh_token: 'refresh-new', token_type: 'bearer' }
 const profile = { user_id: '11111111-1111-4111-8111-111111111111', username: 'test', is_staff: false }
@@ -27,6 +28,7 @@ const deferred = () => { let resolve; const promise = new Promise((done) => { re
 const tick = () => new Promise((resolve) => setImmediate(resolve))
 
 beforeEach(() => {
+  drafts.clearDrafts()
   session.clearSession()
   session.setTokens(oldTokens, session.getSession().generation)
   session.setUser(profile, session.getSession().generation)
@@ -215,13 +217,13 @@ test('late successful private response is discarded after logout', async () => {
 })
 
 test('UI navigation avoids API prefixes and only accepts allowed return paths', () => {
-  const paths = ['/my-resumes', '/my-vacancies', '/add-resume', '/add-vacancy', '/profile', '/users', `/users/${profile.user_id}`, `/my-vacancies/${profile.user_id}`]
+  const paths = ['/workspace', '/my-versions', `/my-versions/${profile.user_id}`, '/my-resumes', '/my-vacancies', '/add-resume', '/add-vacancy', '/profile', '/users', `/users/${profile.user_id}`, `/my-vacancies/${profile.user_id}`]
   for (const path of paths) {
     assert.ok(routes.matchRoute(path).protected)
     assert.equal(routes.safeReturnPath(path), path)
     assert.equal(/^\/(auth|resumes|vacancies)/.test(path), false)
   }
-  for (const path of ['//evil.invalid', 'https://evil.invalid', '/\\evil.invalid', '/auth/me', '/login', '/unknown', '/users/not-a-uuid', '/my-resumes?next=//evil.invalid']) assert.equal(routes.safeReturnPath(path), '/my-resumes')
+  for (const path of ['//evil.invalid', 'https://evil.invalid', '/\\evil.invalid', '/auth/me', '/login', '/unknown', '/users/not-a-uuid', '/my-resumes?next=//evil.invalid']) assert.equal(routes.safeReturnPath(path), '/workspace')
   assert.equal(routes.matchRoute('/missing'), null)
 })
 
@@ -264,4 +266,40 @@ test('users 403 does not refresh or terminate an authenticated session', async (
   assert.deepEqual(calls, ['/auth/users', `/auth/users/${profile.user_id}`])
   assert.equal(session.getSession().status, 'authenticated')
   assert.equal(session.getTokens().access_token, 'old')
+})
+
+test('adaptation creation sends only source ids and polling keeps rejected reviews', async () => {
+  const adaptation = { id: profile.user_id, status: 'done', result: { resume_text: 'Python', review: { passed: false, issues: ['Check this fact'] } } }
+  const calls = []
+  globalThis.fetch = async (path, options) => {
+    calls.push([path, options])
+    return json(adaptation, options.method === 'POST' ? 201 : 200)
+  }
+  const created = await documents.addAdaptation('resume-id', 'vacancy-id')
+  const result = await documents.getAdaptation(created.id)
+  assert.equal(calls[0][0], '/adaptations')
+  assert.equal(calls[0][1].headers.Authorization, 'Bearer old')
+  assert.deepEqual(JSON.parse(calls[0][1].body), { resume_id: 'resume-id', vacancy_id: 'vacancy-id' })
+  assert.equal(calls[1][0], `/adaptations/${profile.user_id}`)
+  assert.equal(result.result.review.passed, false)
+  assert.deepEqual(result.result.review.issues, ['Check this fact'])
+})
+
+test('uncertain adaptation creation is never automatically repeated', async () => {
+  let count = 0
+  globalThis.fetch = async () => { count++; return json({}, 500) }
+  await assert.rejects(documents.addAdaptation('resume', 'vacancy'), (error) => error.uncertain === true)
+  assert.equal(count, 1)
+})
+
+test('local versions stay scoped to the account and clear on explicit reset', () => {
+  const first = { id: 'first', status: 'pending' }
+  drafts.rememberVersion(profile.user_id, first)
+  drafts.rememberVersion(profile.user_id, { ...first, status: 'done' })
+  assert.deepEqual(drafts.getDraft(profile.user_id).versions, [{ id: 'first', status: 'done' }])
+  assert.deepEqual(drafts.getDraft('other-user').versions, [])
+  assert.deepEqual(drafts.getDraft(profile.user_id).versions, [])
+  drafts.rememberVersion(profile.user_id, first)
+  drafts.clearDrafts()
+  assert.deepEqual(drafts.getDraft(profile.user_id).versions, [])
 })
