@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { mockApi, userId, missingId } from './fixtures'
-import { login, logout, navigateTo, openNavigation, noOverflow } from './helpers'
+import { login, logout, navigateTo, openNavigation, noOverflow, navigationLink } from './helpers'
 
 for (const path of ['/users', `/users/${userId}`, `/users/${missingId}`]) {
   test(`nonstaff cannot request ${path} through direct URL, reload or history`, async ({ page }) => {
@@ -56,7 +56,7 @@ for (const role of ['nonstaff', 'staff'] as const) {
     if (role === 'staff') {
       await expect(page.getByRole('link', { name: 'browser-test', exact: true })).toBeVisible()
       await openNavigation(page)
-      await expect(page.getByRole('navigation', { name: 'Основная навигация' }).getByRole('link', { name: 'Пользователи' })).toBeVisible()
+      await expect(navigationLink(page, 'Пользователи')).toBeVisible()
       expect(state.userCalls.length).toBeGreaterThan(0)
     } else expect(state.userCalls).toEqual([])
   })
@@ -109,7 +109,7 @@ test('late staff response cannot restore data after logout and login as nonstaff
   state.profile = { user_id: missingId, username: 'another-user', is_staff: false }
   await page.getByRole('link', { name: 'Вход', exact: true }).click()
   await login(page)
-  await expect(page.getByRole('heading', { name: 'Мои резюме', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Ваш опыт.')
   await page.goBack()
   await page.goBack()
   await expect(page.getByRole('heading', { name: 'Доступ ограничен' })).toBeVisible()
@@ -145,7 +145,7 @@ test('mobile menu closes on Escape, outside click and navigation with keyboard f
   await expect(page.getByRole('dialog')).not.toBeVisible()
   await expect(burger).toBeFocused()
   await burger.click()
-  await page.mouse.click(page.viewportSize()!.width - 10, 400)
+  await page.mouse.click(10, 400)
   await expect(page.getByRole('dialog')).not.toBeVisible()
   await navigateTo(page, 'Мои резюме')
   await expect(page.getByRole('heading', { name: 'Мои резюме', exact: true })).toBeVisible()
