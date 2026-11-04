@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.interfaces.event_publisher import IEventPublisher
 from app.models.outbox import OutboxEvent
-from app.schemas.event import ResumeUploadedEvent, VacancyUploadedEvent
+from app.schemas.event import ResumeUploadedEvent, VacancyUploadedEvent, AdaptationRequestedEvent
 
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ class OutboxDispatcher:
         self._poll_interval = poll_interval
         self._retry_interval = retry_interval
         self._publish_timeout = publish_timeout
-        self._event_adapter = TypeAdapter(ResumeUploadedEvent | VacancyUploadedEvent)
+        self._event_adapter = TypeAdapter(ResumeUploadedEvent | VacancyUploadedEvent | AdaptationRequestedEvent)
 
     async def dispatch_one(self) -> bool:
         async with self._session_factory() as session:
