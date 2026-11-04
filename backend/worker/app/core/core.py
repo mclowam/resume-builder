@@ -13,6 +13,7 @@ class Config:
     OPENAI_API_KEY: str | None = getenv("OPENAI_API_KEY")
     OPENAI_BASE_URL: str = getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
     EMBEDDING_MODEL: str = getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+    LLM_MODEL: str = getenv("LLM_MODEL", "gpt-4.1-mini")
 
 
 settings = Config()
