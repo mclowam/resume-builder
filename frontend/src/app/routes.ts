@@ -1,6 +1,6 @@
 const uuid = '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}'
-const detail = new RegExp(`^/(my-vacancies|users)/(${uuid})$`, 'i')
-const protectedPaths = ['/my-resumes', '/my-vacancies', '/add-resume', '/add-vacancy', '/profile', '/users']
+const detail = new RegExp(`^/(my-vacancies|my-versions|users)/(${uuid})$`, 'i')
+const protectedPaths = ['/workspace', '/my-versions', '/my-resumes', '/my-vacancies', '/add-resume', '/add-vacancy', '/profile', '/users']
 
 export function matchRoute(path: string) {
   if (['/', '/login', '/register', ...protectedPaths].includes(path)) return { path, id: null, protected: protectedPaths.includes(path), staff: path === '/users' }
@@ -9,7 +9,7 @@ export function matchRoute(path: string) {
 }
 
 export function safeReturnPath(value: string | null) {
-  if (!value || !matchRoute(value)?.protected) return '/my-resumes'
+  if (!value || !matchRoute(value)?.protected) return '/workspace'
   return value
 }
 
