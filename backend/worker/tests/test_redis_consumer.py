@@ -8,7 +8,7 @@ from redis.asyncio import Redis
 from redis.exceptions import ConnectionError
 
 from app.messaging.redis_consumer import RedisConsumer
-from app.schemas.event import ResumeUploadedEvent, VacancyUploadedEvent
+from app.schemas.event import AdaptationRequestedEvent, ResumeUploadedEvent, VacancyUploadedEvent
 
 
 class RedisConsumerTests(unittest.IsolatedAsyncioTestCase):
@@ -24,6 +24,7 @@ class RedisConsumerTests(unittest.IsolatedAsyncioTestCase):
         for event_type, field, model in (
             ("resume.uploaded", "resume_id", ResumeUploadedEvent),
             ("vacancy.uploaded", "vacancy_id", VacancyUploadedEvent),
+            ("adaptation.requested", "adaptation_id", AdaptationRequestedEvent),
         ):
             payload = json.dumps({
                 "event_type": event_type,

@@ -2,7 +2,7 @@ import json
 
 from redis.asyncio import Redis
 
-from app.schemas.event import ResumeUploadedEvent, VacancyUploadedEvent
+from app.schemas.event import ResumeUploadedEvent, VacancyUploadedEvent, AdaptationRequestedEvent
 
 
 class RedisPublisher:
@@ -14,7 +14,7 @@ class RedisPublisher:
         self._redis = redis_client
         self._queue = queue_name
 
-    async def publish(self, event: ResumeUploadedEvent | VacancyUploadedEvent) -> None:
+    async def publish(self, event: ResumeUploadedEvent | VacancyUploadedEvent | AdaptationRequestedEvent) -> None:
         payload = {
             "event_type": event.event_type,
             "data": event.model_dump(mode="json", exclude={"event_type"})

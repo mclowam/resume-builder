@@ -16,4 +16,10 @@ class VacancyUploadedEvent(BaseModel):
     user_id: uuid.UUID
 
 
+class AdaptationRequestedEvent(BaseModel):
+    event_type: Literal["adaptation.requested"] = "adaptation.requested"
+    adaptation_id: uuid.UUID
+    user_id: uuid.UUID
+
+
 

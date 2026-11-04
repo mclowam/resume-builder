@@ -65,6 +65,29 @@ services:
         condition: service_completed_successfully
     networks:
       - resume-network
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: on-failure
+
+  worker:
+    build:
+      context: ./backend/worker
+    env_file:
+      - ./backend/worker/.env
+    environment:
+      RESUME_API_URL: http://resume:8000
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      resume:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - resume-network
     restart: on-failure
 
   minio:

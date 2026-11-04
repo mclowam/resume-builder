@@ -4,6 +4,9 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Response
 
 from app.core.security.deps import get_current_worker
+from app.schemas.adaptation import AdaptationResponseSchema, AdaptationFinishSchema
+from app.services.adaptation import AdaptationService
+from app.use_cases.adaptation import get_adaptation_service
 from app.schemas.resume import ResumeResponseSchema, ResumeSetEmbeddingSchema
 from app.schemas.vacancy import VacancyResponseSchema, VacancySetEmbeddingSchema
 from app.services.resume import ResumeService
@@ -16,6 +19,25 @@ api_v1_router = APIRouter(
     prefix="/internal",
     dependencies=[Depends(get_current_worker)],
 )
+
+
+@api_v1_router.post("/adaptations/{adaptation_id}/claim", response_model=AdaptationResponseSchema | None)
+async def claim_adaptation(
+        adaptation_id: uuid.UUID,
+        user_id: uuid.UUID,
+        service: AdaptationService = Depends(get_adaptation_service),
+):
+    return await service.claim(adaptation_id, user_id)
+
+
+@api_v1_router.patch("/adaptations/{adaptation_id}", response_model=AdaptationResponseSchema)
+async def finish_adaptation(
+        adaptation_id: uuid.UUID,
+        user_id: uuid.UUID,
+        payload: AdaptationFinishSchema,
+        service: AdaptationService = Depends(get_adaptation_service),
+):
+    return await service.finish(adaptation_id, user_id, payload)
 
 
 @api_v1_router.get("/resumes/{resume_id}", response_class=Response)

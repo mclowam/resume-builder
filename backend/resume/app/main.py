@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from redis.asyncio import Redis
 
+from app.api.adaptation import api_v1_router as adaptation_api_v1_router
 from app.api.internal import api_v1_router as internal_api_v1_router
 from app.api.vacancy import api_v1_router as vacancy_api_v1_router
 from app.api.resume import api_v1_router as resume_api_v1_router
@@ -31,6 +32,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+app.include_router(adaptation_api_v1_router)
 app.include_router(vacancy_api_v1_router)
 app.include_router(resume_api_v1_router)
 app.include_router(internal_api_v1_router)
