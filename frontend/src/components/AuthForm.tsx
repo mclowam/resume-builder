@@ -49,7 +49,7 @@ function AuthForm({ mode }: { mode: 'login' | 'register' }) {
   }
 
   return <Page title={isLogin ? 'Вход' : 'Регистрация'} description={isLogin ? 'Войдите, чтобы работать со своими документами.' : 'Создайте аккаунт для резюме и вакансий.'} narrow>
-    {session.user ? <Stack><Text className="wrap-text">Вы вошли как {session.user.username}.</Text><Button component={Link} href={next}>Продолжить</Button></Stack> : registered ? <Alert color="teal" title="Аккаунт создан" role="status"><Text size="sm" mb="md">Теперь можно войти.</Text><Button component={Link} href={authPath('login', next)}>Перейти ко входу</Button></Alert> : <>
+    {session.user ? <Stack><Text className="wrap-text">Вы вошли как {session.user.username}.</Text><Button component={Link} href={next}>Продолжить</Button></Stack> : registered ? <Alert color="blue" title="Аккаунт создан" role="status"><Text size="sm" mb="md">Теперь можно войти.</Text><Button component={Link} href={authPath('login', next)}>Перейти ко входу</Button></Alert> : <>
       {session.message && <Alert role="status" mb="lg">{session.message}</Alert>}
       <form onSubmit={submit} aria-busy={pending} className="form-stack auth-form">
         <TextInput label="Имя пользователя" autoComplete="username" autoCapitalize="none" spellCheck={false} id="username" name="username" required value={username} onChange={(event) => setUsername(event.target.value)} disabled={pending} />
