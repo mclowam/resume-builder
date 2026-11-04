@@ -25,9 +25,10 @@ function AddResumePage({ userId }: { userId: string }) {
     busy.current = true
     setPending(true)
     try {
-      await addResume(file)
+      const location = await addResume(file)
+      if (location) getDraft(userId).sourceId = location.split('/').pop() || ''
       getDraft(userId).resume = null
-      navigate('/my-resumes?created=1', true)
+      navigate(new URLSearchParams(window.location.search).get('next') === 'workspace' ? '/workspace' : '/my-resumes?created=1', true)
     } catch (cause) {
       setError(cause)
     } finally {
