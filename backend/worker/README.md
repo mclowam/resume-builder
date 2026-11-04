@@ -1,5 +1,7 @@
 # Проверка адаптации через LLM
 
+[Запуск всего проекта](../../README.md) · [Архитектура](../../docs/architecture.md)
+
 ## Обработка задач
 
 `python -m app.main` обрабатывает embeddings и события `adaptation.requested` из
