@@ -1,4 +1,5 @@
-import { Alert } from '@mantine/core'
+import { Alert, Button } from '@mantine/core'
+import Link from '../components/Link'
 import { useCallback } from 'react'
 import { getVacancy } from '../api/documents'
 import { useResource } from '../app/useResource'
@@ -12,7 +13,7 @@ function VacancyPage({ id }: { id: string }) {
     {new URLSearchParams(window.location.search).has('created') && <Alert color="teal" role="status" mb="lg">Вакансия сохранена.</Alert>}
     <ErrorNotice error={resource.error} retry={resource.reload} />
     {resource.loading && <Loading />}
-    {resource.data && <div className="full-text">{resource.data.text || 'Текст отсутствует'}</div>}
+    {resource.data && <><div className="full-text">{resource.data.text || 'Текст отсутствует'}</div><Button component={Link} href={`/workspace?vacancy=${id}`} mt="xl">Адаптировать резюме</Button></>}
   </Page>
 }
 

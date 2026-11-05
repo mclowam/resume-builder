@@ -1,11 +1,13 @@
 # Проверка адаптации через LLM
 
+[Запуск всего проекта](../../README.md) · [Архитектура](../../docs/architecture.md)
+
 ## Обработка задач
 
 `python -m app.main` обрабатывает embeddings и события `adaptation.requested` из
 `REDIS_QUEUE_NAME` (по умолчанию `embedding_tasks`). `RESUME_API_URL` указывает на
 resume-сервис, `REDIS_URL` — на Redis. `WORKER_API_TOKEN` должен совпадать с токеном
-resume-сервиса. Для адаптации используется `LLM_MODEL` (по умолчанию `gpt-4.1-mini`),
+resume-сервиса. Для адаптации используется `LLM_MODEL` (по умолчанию `gpt-5-mini`),
 `OPENAI_API_KEY` и необязательный `OPENAI_BASE_URL`.
 
 Worker атомарно забирает адаптацию через внутренний API, получает оригинальный файл
@@ -26,11 +28,11 @@ Worker атомарно забирает адаптацию через внут�
 Ключ передаётся через переменную окружения `OPENAI_API_KEY`. Скрипт не загружает `.env`.
 `OPENAI_BASE_URL` необязателен, по умолчанию используется `https://api.openai.com/v1`.
 Модель задаётся явно через `--model`; она должна поддерживать Chat Completions с JSON mode.
-В примерах используется `gpt-4.1-mini` — замените её на доступную модель провайдера.
+В примерах используется `gpt-5-mini`. Модель можно заменить через `--model`.
 Каждый запуск адаптации делает три платных API-вызова, отдельный Critic — один.
 
 ```powershell
-python -m app.adapt_resume resume.txt vacancy.txt result.json --model gpt-4.1-mini
+python -m app.adapt_resume resume.txt vacancy.txt result.json --model gpt-5-mini
 ```
 
 Входные файлы — полный текст в UTF-8 (допускается BOM).
@@ -40,7 +42,8 @@ JSON содержит `resume_text` и `review` (`passed`, `issues`).
 При ошибке чтения, API или формата ответа процесс завершается с ненулевым кодом;
 выходной файл не записывается до получения полного результата. Старый результат может остаться,
 поэтому проверяйте код выхода. Существующий выходной файл заменяется при успешном запуске.
-HTTP-таймаут берётся из настроек worker (`HTTP_TIME_OUT`, сейчас 20 секунд).
+HTTP-таймаут задаётся через `HTTP_TIME_OUT`, по умолчанию 90 секунд на один запрос.
+Цепочка выполняет три последовательных запроса, поэтому общее время может быть больше.
 
 ## Три ручных сценария
 
@@ -50,7 +53,7 @@ HTTP-таймаут берётся из настроек worker (`HTTP_TIME_OUT`
 ### 1. Подходящий опыт
 
 ```powershell
-python -m app.adapt_resume examples/resume.txt examples/vacancy_match.txt examples/results/match.json --model gpt-4.1-mini
+python -m app.adapt_resume examples/resume.txt examples/vacancy_match.txt examples/results/match.json --model gpt-5-mini
 ```
 
 Ожидание: Tailor выделяет разработку API на Python/FastAPI, PostgreSQL и тесты.
@@ -59,7 +62,7 @@ python -m app.adapt_resume examples/resume.txt examples/vacancy_match.txt exampl
 ### 2. Отсутствующие навыки
 
 ```powershell
-python -m app.adapt_resume examples/resume.txt examples/vacancy_gaps.txt examples/results/gaps.json --model gpt-4.1-mini
+python -m app.adapt_resume examples/resume.txt examples/vacancy_gaps.txt examples/results/gaps.json --model gpt-5-mini
 ```
 
 Ожидание: Kubernetes, AWS, Kafka и руководство командой не приписаны кандидату.
@@ -73,7 +76,7 @@ python -m app.adapt_resume examples/resume.txt examples/vacancy_gaps.txt example
 $result = Get-Content examples/results/match.json -Raw -Encoding UTF8 | ConvertFrom-Json
 $falseResume = $result.resume_text + "`nРуководила командой из пяти разработчиков."
 Set-Content examples/results/false_resume.txt -Value $falseResume -Encoding UTF8
-python -m app.adapt_resume examples/resume.txt examples/vacancy_match.txt examples/results/critic_false.json --model gpt-4.1-mini --tailored-resume examples/results/false_resume.txt
+python -m app.adapt_resume examples/resume.txt examples/vacancy_match.txt examples/results/critic_false.json --model gpt-5-mini --tailored-resume examples/results/false_resume.txt
 ```
 
 Этот режим вызывает только `CriticAgent`, без Matcher и Tailor, и сохраняет `CriticResult`

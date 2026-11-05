@@ -1,4 +1,4 @@
-import type { Resume, Vacancy } from '../types/api'
+import type { Adaptation, Resume, Vacancy } from '../types/api'
 import { ApiError, request, requestJson } from './client'
 import { getSession } from './session'
 
@@ -49,6 +49,8 @@ export const getResumes = (signal?: AbortSignal) => requestJson<Resume[]>('/resu
 export const getVacancies = (signal?: AbortSignal) => requestJson<Vacancy[]>('/vacancies', { signal })
 export const getVacancy = (id: string, signal?: AbortSignal) => requestJson<Vacancy>(`/vacancies/${id}`, { signal })
 export const addVacancy = (text: string) => requestJson<Vacancy>('/vacancies', { method: 'POST', json: { text } })
+export const addAdaptation = (resumeId: string, vacancyId: string) => requestJson<Adaptation>('/adaptations', { method: 'POST', json: { resume_id: resumeId, vacancy_id: vacancyId } })
+export const getAdaptation = (id: string, signal?: AbortSignal) => requestJson<Adaptation>(`/adaptations/${id}`, { signal })
 
 export async function downloadResume(id: string, fallback: string, signal?: AbortSignal) {
   const generation = getSession().generation

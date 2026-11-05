@@ -8,12 +8,12 @@ class Config:
     REDIS_QUEUE_NAME: str = getenv("REDIS_QUEUE_NAME", "embedding_tasks")
 
     RESUME_API_URL: str = getenv("RESUME_API_URL", "http://localhost:8002")
-    HTTP_TIME_OUT: float = 20.0
+    HTTP_TIME_OUT: float = float(getenv("HTTP_TIME_OUT", "90"))
 
     OPENAI_API_KEY: str | None = getenv("OPENAI_API_KEY")
     OPENAI_BASE_URL: str = getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
     EMBEDDING_MODEL: str = getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-    LLM_MODEL: str = getenv("LLM_MODEL", "gpt-4.1-mini")
+    LLM_MODEL: str = getenv("LLM_MODEL", "gpt-5-mini")
 
 
 settings = Config()

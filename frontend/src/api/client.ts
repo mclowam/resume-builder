@@ -21,7 +21,7 @@ type Options = {
 }
 
 const expired = 'Не удалось восстановить сессию. Войдите снова.'
-const apiPath = /^\/(?:auth\/(?:login|register|refresh|me|users(?:\/[a-f0-9-]+)?)|resumes(?:\/[a-f0-9-]+)?|vacancies(?:\/[a-f0-9-]+)?)$/i
+const apiPath = /^\/(?:auth\/(?:login|register|refresh|me|users(?:\/[a-f0-9-]+)?)|resumes(?:\/[a-f0-9-]+)?|vacancies(?:\/[a-f0-9-]+)?|adaptations(?:\/[a-f0-9-]+)?)$/i
 let refreshing: { generation: number; promise: Promise<void> } | null = null
 
 function assertSession(generation: number) {

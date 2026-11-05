@@ -20,7 +20,7 @@ export function Loading({ text = 'Загрузка…' }: { text?: string }) {
 
 export function EmptyState({ title, description }: { title: string; description: string }) {
   return <Paper className="empty-state" withBorder={false} bg="gray.0">
-    <ThemeIcon size={52} radius="xl" variant="light" color="gray" mb="md"><Icon name="resume" size={24} /></ThemeIcon>
+    <ThemeIcon size={44} radius={4} variant="light" color="gray" mb="md"><Icon name="resume" size={22} /></ThemeIcon>
     <Title order={2}>{title}</Title><Text c="dimmed" size="sm" mt="xs" maw={400} mx="auto">{description}</Text>
   </Paper>
 }

@@ -75,6 +75,20 @@ class CriticTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.model_dump(), review)
 
+    async def test_rejects_unchanged_resume_despite_llm_approval(self):
+        resume = "Иван\nPython и Docker"
+        for tailored in (resume, "  Иван\n\nPython   и Docker  ", resume.upper()):
+            with self.subTest(tailored=tailored):
+                client = AsyncMock()
+                client.generate.return_value = '{"passed": true, "issues": []}'
+
+                result = await CriticAgent(client).run(
+                    resume, "Python, Docker и Git", TailorResult(resume_text=tailored),
+                )
+
+                self.assertFalse(result.passed)
+                self.assertTrue(result.issues)
+
     async def test_rejects_invalid_results(self):
         for content in ("not json", "{}", '{"passed": true}', '{"issues": []}',
                         '{"passed": "true", "issues": []}', '{"passed": 1, "issues": []}',

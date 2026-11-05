@@ -2,14 +2,14 @@ import { test, expect } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 
 import { mockApi, userId, missingId } from './fixtures'
-import { login, noOverflow, navigateTo, logout, openNavigation } from './helpers'
+import { login, noOverflow, navigateTo, logout, openNavigation, navigationLink } from './helpers'
 
 test('registration, login, PDF/DOCX upload, authorized download, profile and logout', async ({ page }, testInfo) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   await mockApi(page, 'anonymous')
   await page.goto('/')
-  await expect(page.locator('main')).toBeEmpty()
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Ваш опыт.')
   await page.getByRole('link', { name: 'Регистрация', exact: true }).click()
   await page.getByLabel('Имя пользователя').fill('browser-test')
   await page.getByLabel('Пароль', { exact: true }).fill('browser-password')
@@ -17,7 +17,8 @@ test('registration, login, PDF/DOCX upload, authorized download, profile and log
   await expect(page.getByRole('status')).toContainText('Аккаунт создан')
   await page.getByRole('link', { name: 'Перейти ко входу' }).click()
   await login(page)
-  await expect(page.getByRole('heading', { name: 'Пока нет резюме' })).toBeVisible()
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Ваш опыт.')
+  await navigateTo(page, 'Мои резюме')
   for (const name of ['resume.pdf', 'резюме.docx']) {
     await page.getByRole('link', { name: 'Добавить резюме' }).click()
     const file = new URL(`../fixtures/${name.endsWith('.pdf') ? 'resume.pdf' : 'resume.docx'}`, import.meta.url)
@@ -38,7 +39,7 @@ test('registration, login, PDF/DOCX upload, authorized download, profile and log
   await expect(page.locator('dd').filter({ hasText: 'browser-test' })).toBeVisible()
   await expect(page.locator('a[href="/users"]')).toHaveCount(0)
   await logout(page)
-  await expect(page.locator('main')).toBeEmpty()
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Ваш опыт.')
   await page.goBack()
   await expect(page.getByRole('heading', { name: 'Войдите в аккаунт' })).toBeVisible()
   await expect(page.locator('dd')).toHaveCount(0)
@@ -116,7 +117,7 @@ test('protected deep links, allowed login return, unknown URL and resource 404',
   await logout(page)
   await page.goto('/login?next=https://evil.invalid')
   await login(page)
-  await expect(page).toHaveURL(/\/my-resumes$/)
+  await expect(page).toHaveURL(/\/workspace$/)
 })
 
 test('restoration refresh success and failed refresh 500 lead to login', async ({ page }) => {
@@ -147,7 +148,7 @@ test('logout during refresh does not resurrect private data', async ({ page }) =
   await refreshing
   await logout(page)
   await page.waitForTimeout(900)
-  await expect(page.locator('main')).toBeEmpty()
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Ваш опыт.')
   expect(await page.evaluate(() => sessionStorage.getItem('access_token'))).toBeNull()
   await page.goBack()
   await expect(page.getByRole('heading', { name: 'Войдите в аккаунт' })).toBeVisible()
@@ -174,7 +175,7 @@ test('draft survives failed refresh for the same user and explicit logout clears
   await expect(page.getByLabel('Полный текст вакансии')).toHaveValue('')
 })
 
-test('400, 403, 422 preserve input; empty users and keyboard navigation', async ({ page }) => {
+test('400, 403, 422 preserve input; empty users and keyboard navigation', async ({ page, isMobile }) => {
   const state = await mockApi(page, 'staff')
   await page.goto('/add-vacancy')
   await page.getByLabel('Полный текст вакансии').fill('Полный текст')
@@ -198,10 +199,10 @@ test('400, 403, 422 preserve input; empty users and keyboard navigation', async 
   await navigateTo(page, 'Пользователи')
   await expect(page.getByRole('heading', { name: 'Пользователи не найдены' })).toBeVisible()
   await openNavigation(page)
-  await page.getByRole('link', { name: 'Пользователи', exact: true }).focus()
-  await page.keyboard.press('Tab')
-  await expect(page.getByRole('link', { name: 'Профиль', exact: true })).toBeFocused()
-  expect(await page.getByRole('link', { name: 'Профиль', exact: true }).evaluate((element) => getComputedStyle(element).outlineStyle)).not.toBe('none')
+  await navigationLink(page, 'Пользователи').focus()
+  await page.keyboard.press(isMobile ? 'Shift+Tab' : 'ArrowUp')
+  await expect(navigationLink(page, 'Профиль')).toBeFocused()
+  expect(await navigationLink(page, 'Профиль').evaluate((element) => getComputedStyle(element).outlineStyle)).not.toBe('none')
   await page.keyboard.press('Enter')
   await expect(page.getByRole('heading', { name: 'Профиль', exact: true })).toBeVisible()
   await noOverflow(page)

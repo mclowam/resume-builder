@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test'
+import type { Adaptation } from '../../src/types/api'
 
 export const userId = '11111111-1111-4111-8111-111111111111'
 export const vacancyId = '22222222-2222-4222-8222-222222222222'
@@ -24,6 +25,14 @@ export async function mockApi(page: Page, role: 'anonymous' | 'nonstaff' | 'staf
     refreshDelay: 0,
     emptyUsers: false,
     postDelay: 0,
+    adaptations: [] as Adaptation[],
+    adaptationPosts: 0,
+    adaptationGets: 0,
+    adaptationDelay: 0,
+    adaptationStatus: 0,
+    pollsUntilDone: 0,
+    reviewPassed: true,
+    failAdaptation: false,
   }
   if (role !== 'anonymous') await page.addInitScript((value) => {
     if (!sessionStorage.getItem('test-seeded')) {
@@ -32,7 +41,7 @@ export async function mockApi(page: Page, role: 'anonymous' | 'nonstaff' | 'staf
       sessionStorage.setItem('test-seeded', 'true')
     }
   }, tokens)
-  await page.route(/\/(auth|resumes|vacancies)(\/|$)/, async (route) => {
+  await page.route(/\/(auth|resumes|vacancies|adaptations)(\/|$)/, async (route) => {
     const request = route.request()
     const path = new URL(request.url()).pathname
     const respond = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
@@ -89,6 +98,30 @@ export async function mockApi(page: Page, role: 'anonymous' | 'nonstaff' | 'staf
     }
     if (path === '/vacancies') return respond(state.vacancies)
     if (path === `/vacancies/${vacancyId}` && state.vacancies.length) return respond(state.vacancies[0])
+    if (path === '/adaptations' && request.method() === 'POST') {
+      state.adaptationPosts++
+      if (state.adaptationDelay) await new Promise((resolve) => setTimeout(resolve, state.adaptationDelay))
+      if (state.adaptationStatus) return respond({}, state.adaptationStatus)
+      const data = request.postDataJSON()
+      const adaptation: Adaptation = {
+        id: `${state.adaptations.length + 4}4444444-4444-4444-8444-444444444444`,
+        user_id: state.profile.user_id, resume_id: data.resume_id, vacancy_id: data.vacancy_id,
+        status: 'pending', result: null, error: null, created_at: '2026-11-04T10:00:00Z',
+      }
+      state.adaptations.push(adaptation)
+      return respond(adaptation, 201)
+    }
+    if (path.startsWith('/adaptations/')) {
+      state.adaptationGets++
+      const adaptation = state.adaptations.find((item) => path.endsWith(item.id) && item.user_id === state.profile.user_id)
+      if (!adaptation) return respond({}, 404)
+      if (state.adaptationGets > state.pollsUntilDone) {
+        adaptation.status = state.failAdaptation ? 'failed' : 'done'
+        adaptation.error = state.failAdaptation ? 'HTTPStatusError' : null
+        adaptation.result = state.failAdaptation ? null : { resume_text: 'Анна Смирнова\nPython, FastAPI, PostgreSQL.\nИсходные факты сохранены.', review: { passed: state.reviewPassed, issues: state.reviewPassed ? [] : ['Уберите неподтверждённый опыт Docker.'] } }
+      }
+      return respond(adaptation)
+    }
     return respond({}, 404)
   })
   return state

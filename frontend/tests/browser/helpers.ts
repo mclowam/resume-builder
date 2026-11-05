@@ -13,17 +13,29 @@ export async function noOverflow(page: Page) {
 
 export async function openNavigation(page: Page) {
   const burger = page.getByRole('button', { name: 'Открыть меню' })
-  if (await burger.isVisible() && !await page.getByRole('navigation', { name: 'Основная навигация' }).isVisible()) await burger.click()
-  if (await burger.isVisible()) await expect.poll(async () => Math.round((await page.getByRole('dialog').boundingBox())?.x ?? -1)).toBe(0)
+  if (await burger.isVisible()) {
+    if (!await page.getByRole('dialog').isVisible()) await burger.click()
+    await expect(page.getByRole('dialog')).toBeVisible()
+  } else if (!await page.getByRole('menu').isVisible()) {
+    await page.getByRole('button', { name: /^Аккаунт / }).click()
+    await expect(page.getByRole('menu')).toBeVisible()
+  }
+}
+
+export function navigationLink(page: Page, name: string) {
+  return page.locator('a[role="menuitem"], .mobile-navigation a, .desktop-navigation a').filter({ hasText: new RegExp(`^${name}$`) }).filter({ visible: true })
 }
 
 export async function navigateTo(page: Page, name: string) {
   await openNavigation(page)
-  await page.getByRole('navigation', { name: 'Основная навигация' }).getByRole('link', { name, exact: true }).click()
+  await navigationLink(page, name).click()
   await expect(page.getByRole('dialog')).not.toBeVisible()
+  await expect(page.getByRole('menu')).not.toBeVisible()
 }
 
 export async function logout(page: Page) {
   await openNavigation(page)
-  await page.getByRole('button', { name: 'Выйти' }).click()
+  const burger = page.getByRole('button', { name: 'Открыть меню' })
+  if (await burger.isVisible()) await page.getByRole('button', { name: 'Выйти' }).click()
+  else await page.getByRole('menuitem', { name: 'Выйти' }).click()
 }

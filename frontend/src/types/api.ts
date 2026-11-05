@@ -15,3 +15,14 @@ export type Resume = {
 }
 
 export type Vacancy = { id: string; user_id: string; text: string }
+
+export type Adaptation = {
+  id: string
+  user_id: string
+  resume_id: string
+  vacancy_id: string
+  status: 'pending' | 'running' | 'done' | 'failed'
+  result: { resume_text: string; review: { passed: boolean; issues: string[] } } | null
+  error: string | null
+  created_at: string
+}
