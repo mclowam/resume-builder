@@ -21,4 +21,11 @@ class CriticAgent:
                 "tailor_result": tailor_result.model_dump(),
             }, ensure_ascii=False),
         )
-        return CriticResult.model_validate_json(response)
+        review = CriticResult.model_validate_json(response)
+        original = " ".join(resume_text.split()).casefold()
+        adapted = " ".join(tailor_result.resume_text.split()).casefold()
+        if adapted == original:
+            return CriticResult(passed=False, issues=[
+                "Результат повторяет исходное резюме. Требуется адаптировать профиль и акценты под вакансию.",
+            ])
+        return review

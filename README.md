@@ -76,7 +76,8 @@ if (-not (Test-Path backend/worker/.env)) { Copy-Item backend/worker/.env.exampl
 | Переменная | Сервис | Значение |
 | --- | --- | --- |
 | `OPENAI_BASE_URL` | worker | `https://api.openai.com/v1` |
-| `LLM_MODEL` | worker | `gpt-4.1-mini` |
+| `LLM_MODEL` | worker | `gpt-5-mini` |
+| `HTTP_TIME_OUT` | worker | `90` секунд на HTTP-запрос |
 | `EMBEDDING_MODEL` | worker | `text-embedding-3-small` |
 | `REDIS_QUEUE_NAME` | resume, worker | `embedding_tasks`, должно совпадать |
 | `MINIO_BUCKET` | resume, minio-init | `resumes` |
