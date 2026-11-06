@@ -1,8 +1,8 @@
 import json
-import unittest
 from unittest.mock import AsyncMock, patch
 
 import httpx
+import pytest
 from pydantic import ValidationError
 
 from app.agents.critic import CriticAgent
@@ -12,7 +12,11 @@ from app.clients.llm import LLMHttpClient
 from app.schemas.tailor import TailorResult
 
 
-class CriticTests(unittest.IsolatedAsyncioTestCase):
+class TestCritic:
+    @pytest.fixture(autouse=True)
+    def setup(self, cleanup):
+        self.cleanup = cleanup
+
     async def create_client(self, *responses):
         self.requests = []
         responses = iter(responses)
@@ -26,7 +30,7 @@ class CriticTests(unittest.IsolatedAsyncioTestCase):
         )
         with patch("app.clients.llm.httpx.AsyncClient", return_value=http_client):
             client = LLMHttpClient("https://api.openai.com/v1/", "test-key", "gpt-4.1-mini")
-        self.addAsyncCleanup(client.close)
+        self.cleanup.push_async_callback(client.close)
         return client
 
     def completion(self, content):
@@ -52,17 +56,14 @@ class CriticTests(unittest.IsolatedAsyncioTestCase):
         tailor_result = await TailorAgent(client).run(resume, vacancy, match_result)
         result = await CriticAgent(client).run(resume, vacancy, tailor_result)
 
-        self.assertEqual(result.model_dump(), {"passed": True, "issues": []})
-        self.assertEqual(tailor_result.resume_text, tailored)
-        self.assertEqual(len(self.requests), 3)
+        assert result.model_dump() == {"passed": True, "issues": []}
+        assert tailor_result.resume_text == tailored
+        assert len(self.requests) == 3
         body = json.loads(self.requests[2].content)
-        self.assertEqual(json.loads(body["messages"][1]["content"]), {
+        assert json.loads(body["messages"][1]["content"]) == {
             "resume": resume, "vacancy": vacancy, "tailor_result": {"resume_text": tailored},
-        })
-        self.assertNotEqual(
-            body["messages"][0]["content"],
-            json.loads(self.requests[1].content)["messages"][0]["content"],
-        )
+        }
+        assert body["messages"][0]["content"] != json.loads(self.requests[1].content)["messages"][0]["content"]
 
     async def test_returns_failed_review_with_issues(self):
         review = {
@@ -73,12 +74,12 @@ class CriticTests(unittest.IsolatedAsyncioTestCase):
 
         result = await CriticAgent(client).run("Python", "Python и Docker", TailorResult(resume_text="Python, Docker"))
 
-        self.assertEqual(result.model_dump(), review)
+        assert result.model_dump() == review
 
-    async def test_rejects_unchanged_resume_despite_llm_approval(self):
+    async def test_rejects_unchanged_resume_despite_llm_approval(self, subtests):
         resume = "Иван\nPython и Docker"
         for tailored in (resume, "  Иван\n\nPython   и Docker  ", resume.upper()):
-            with self.subTest(tailored=tailored):
+            with subtests.test(tailored=tailored):
                 client = AsyncMock()
                 client.generate.return_value = '{"passed": true, "issues": []}'
 
@@ -86,10 +87,10 @@ class CriticTests(unittest.IsolatedAsyncioTestCase):
                     resume, "Python, Docker и Git", TailorResult(resume_text=tailored),
                 )
 
-                self.assertFalse(result.passed)
-                self.assertTrue(result.issues)
+                assert not result.passed
+                assert result.issues
 
-    async def test_rejects_invalid_results(self):
+    async def test_rejects_invalid_results(self, subtests):
         for content in ("not json", "{}", '{"passed": true}', '{"issues": []}',
                         '{"passed": "true", "issues": []}', '{"passed": 1, "issues": []}',
                         '{"passed": null, "issues": []}', '{"passed": true, "issues": ["Problem"]}',
@@ -97,24 +98,24 @@ class CriticTests(unittest.IsolatedAsyncioTestCase):
                         json.dumps({"passed": False, "issues": [" \n\t "]}),
                         '{"passed": false, "issues": [42]}', '{"passed": false, "issues": "Problem"}',
                         '{"passed": true, "issues": [], "extra": true}'):
-            with self.subTest(content=content):
+            with subtests.test(content=content):
                 client = await self.create_client(self.completion(content))
-                with self.assertRaises(ValidationError):
+                with pytest.raises(ValidationError):
                     await CriticAgent(client).run("Python", "Docker", TailorResult(resume_text="Python"))
 
-    async def test_rejects_empty_documents_before_calling_llm(self):
+    async def test_rejects_empty_documents_before_calling_llm(self, subtests):
         client = AsyncMock()
         agent = CriticAgent(client)
         tailor_result = TailorResult(resume_text="Python")
         for resume, vacancy in (("", "Python"), (" \n ", "Python"),
                                 ("Python", ""), ("Python", " \n ")):
-            with self.subTest(resume=resume, vacancy=vacancy):
-                with self.assertRaises(ValueError):
+            with subtests.test(resume=resume, vacancy=vacancy):
+                with pytest.raises(ValueError):
                     await agent.run(resume, vacancy, tailor_result)
         client.generate.assert_not_awaited()
 
     async def test_propagates_api_error(self):
         client = await self.create_client(httpx.Response(429, json={"error": {"message": "Rate limit"}}))
-        with self.assertRaises(httpx.HTTPStatusError):
+        with pytest.raises(httpx.HTTPStatusError):
             await CriticAgent(client).run("Python", "Docker", TailorResult(resume_text="Python"))
-        self.assertEqual(len(self.requests), 1)
+        assert len(self.requests) == 1
