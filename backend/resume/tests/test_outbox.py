@@ -1,10 +1,10 @@
 import asyncio
 import json
 import os
-import unittest
 import uuid
 from unittest.mock import AsyncMock
 
+import pytest
 from redis.exceptions import ConnectionError as RedisConnectionError
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
@@ -22,18 +22,20 @@ from app.schemas.resume import ResumeCreateSchema
 from app.schemas.vacancy import VacancyCreateSchema
 
 
-@unittest.skipUnless(os.getenv("TEST_DATABASE_URL"), "TEST_DATABASE_URL is required")
-class OutboxTests(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
+@pytest.mark.skipif(not os.getenv("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL is required")
+class TestOutbox:
+    @pytest.fixture(autouse=True)
+    async def setup(self, cleanup):
+        self.cleanup = cleanup
         self.schema = f"outbox_test_{uuid.uuid4().hex}"
         self.engine = create_async_engine(
             os.environ["TEST_DATABASE_URL"],
             connect_args={"server_settings": {"search_path": self.schema}},
         )
-        self.addAsyncCleanup(self.engine.dispose)
+        self.cleanup.push_async_callback(self.engine.dispose)
         async with self.engine.begin() as connection:
             await connection.execute(text(f'CREATE SCHEMA "{self.schema}"'))
-        self.addAsyncCleanup(self.drop_schema)
+        self.cleanup.push_async_callback(self.drop_schema)
         async with self.engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
@@ -61,60 +63,60 @@ class OutboxTests(unittest.IsolatedAsyncioTestCase):
 
     async def stop_task(self, task):
         task.cancel()
-        with self.assertRaises(asyncio.CancelledError):
+        with pytest.raises(asyncio.CancelledError):
             await task
 
-    async def test_publish_failure_preserves_each_entity_and_retries_same_event(self):
+    async def test_publish_failure_preserves_each_entity_and_retries_same_event(self, subtests):
         for kind, model in (("resume", Resume), ("vacancy", Vacancy)):
-            with self.subTest(kind=kind):
+            with subtests.test(kind=kind):
                 entity = await self.create_entity(kind)
                 before = (await self.pending())[0]
-                self.assertEqual(before.payload[f"{kind}_id"], str(entity.id))
-                self.assertEqual(before.payload["user_id"], str(entity.user_id))
+                assert before.payload[f"{kind}_id"] == str(entity.id)
+                assert before.payload["user_id"] == str(entity.user_id)
                 self.publisher.publish.side_effect = RedisConnectionError("unavailable")
-                with self.assertRaises(RedisConnectionError):
+                with pytest.raises(RedisConnectionError):
                     await self.dispatcher.dispatch_one()
                 after = (await self.pending())[0]
-                self.assertEqual((after.id, after.payload), (before.id, before.payload))
+                assert (after.id, after.payload) == (before.id, before.payload)
                 async with self.sessions() as session:
-                    self.assertIsNotNone(await session.get(model, entity.id))
+                    assert await session.get(model, entity.id) is not None
                 self.publisher.publish.side_effect = None
-                self.assertTrue(await self.dispatcher.dispatch_one())
+                assert await self.dispatcher.dispatch_one()
                 event = self.publisher.publish.call_args.args[0]
-                self.assertEqual(event.model_dump(mode="json"), before.payload)
-                self.assertEqual(await self.pending(), [])
-                self.assertFalse(await self.dispatcher.dispatch_one())
+                assert event.model_dump(mode="json") == before.payload
+                assert await self.pending() == []
+                assert not await self.dispatcher.dispatch_one()
 
-    async def test_existing_redis_wire_format_for_both_entity_types(self):
+    async def test_existing_redis_wire_format_for_both_entity_types(self, subtests):
         redis = AsyncMock()
         dispatcher = OutboxDispatcher(
             self.sessions, RedisPublisher(redis, "embedding_tasks"),
         )
         for kind in ("resume", "vacancy"):
-            with self.subTest(kind=kind):
+            with subtests.test(kind=kind):
                 entity = await self.create_entity(kind)
-                self.assertTrue(await dispatcher.dispatch_one())
+                assert await dispatcher.dispatch_one()
                 queue, payload = redis.rpush.call_args.args
-                self.assertEqual(queue, "embedding_tasks")
-                self.assertEqual(json.loads(payload), {
+                assert queue == "embedding_tasks"
+                assert json.loads(payload) == {
                     "event_type": f"{kind}.uploaded",
                     "data": {f"{kind}_id": str(entity.id), "user_id": str(entity.user_id)},
-                })
-                self.assertEqual(await self.pending(), [])
+                }
+                assert await self.pending() == []
 
-    async def test_outbox_insert_failure_rolls_back_entity(self):
+    async def test_outbox_insert_failure_rolls_back_entity(self, subtests):
         async with self.engine.begin() as connection:
             await connection.execute(text(
                 "ALTER TABLE outbox_events ADD CONSTRAINT reject_events CHECK (false)"
             ))
         for kind in ("resume", "vacancy"):
-            with self.subTest(kind=kind):
-                with self.assertRaises(IntegrityError):
+            with subtests.test(kind=kind):
+                with pytest.raises(IntegrityError):
                     await self.create_entity(kind)
                 async with self.sessions() as session:
                     for model in (Resume, Vacancy, OutboxEvent):
                         count = await session.scalar(select(func.count()).select_from(model))
-                        self.assertEqual(count, 0)
+                        assert count == 0
 
     async def test_concurrent_dispatcher_skips_locked_event(self):
         resume = await self.create_entity("resume")
@@ -132,15 +134,15 @@ class OutboxTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.wait_for(started.wait(), timeout=2)
             other_publisher = AsyncMock()
             other = OutboxDispatcher(self.sessions, other_publisher)
-            self.assertTrue(await asyncio.wait_for(other.dispatch_one(), timeout=2))
+            assert await asyncio.wait_for(other.dispatch_one(), timeout=2)
             event = other_publisher.publish.call_args.args[0]
-            self.assertEqual(event.vacancy_id, vacancy.id)
-            self.assertEqual((await self.pending())[0].payload["resume_id"], str(resume.id))
-            self.assertFalse(await other.dispatch_one())
+            assert event.vacancy_id == vacancy.id
+            assert (await self.pending())[0].payload["resume_id"] == str(resume.id)
+            assert not await other.dispatch_one()
         finally:
             release.set()
             await asyncio.wait_for(first, timeout=2)
-        self.assertEqual(await self.pending(), [])
+        assert await self.pending() == []
 
     async def test_cancellation_retains_event_and_releases_lock(self):
         await self.create_entity("resume")
@@ -156,10 +158,10 @@ class OutboxTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.wait_for(started.wait(), timeout=2)
         finally:
             await self.stop_task(task)
-        self.assertEqual(len(await self.pending()), 1)
+        assert len(await self.pending()) == 1
         self.publisher.publish.side_effect = None
-        self.assertTrue(await self.dispatcher.dispatch_one())
-        self.assertEqual(await self.pending(), [])
+        assert await self.dispatcher.dispatch_one()
+        assert await self.pending() == []
 
     async def test_publish_timeout_retains_event(self):
         await self.create_entity("vacancy")
@@ -169,13 +171,13 @@ class OutboxTests(unittest.IsolatedAsyncioTestCase):
 
         self.publisher.publish.side_effect = publish
         dispatcher = OutboxDispatcher(self.sessions, self.publisher, publish_timeout=0.02)
-        with self.assertRaises(TimeoutError):
+        with pytest.raises(TimeoutError):
             await dispatcher.dispatch_one()
-        self.assertEqual(len(await self.pending()), 1)
+        assert len(await self.pending()) == 1
         self.publisher.publish.side_effect = None
-        self.assertTrue(await dispatcher.dispatch_one())
+        assert await dispatcher.dispatch_one()
 
-    async def test_run_recovers_after_publish_failure(self):
+    async def test_run_recovers_after_publish_failure(self, caplog):
         await self.create_entity("resume")
         self.publisher.publish.side_effect = [RedisConnectionError("unavailable"), None]
         dispatcher = OutboxDispatcher(
@@ -186,15 +188,12 @@ class OutboxTests(unittest.IsolatedAsyncioTestCase):
             while await self.pending():
                 await asyncio.sleep(0.01)
 
-        with self.assertLogs("app.messaging.outbox_dispatcher", level="ERROR"):
+        with caplog.at_level("ERROR", logger="app.messaging.outbox_dispatcher"):
             task = asyncio.create_task(dispatcher.run())
             try:
                 await asyncio.wait_for(wait_until_delivered(), timeout=2)
             finally:
                 await self.stop_task(task)
-        self.assertEqual(self.publisher.publish.await_count, 2)
-        self.assertEqual(await self.pending(), [])
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert self.publisher.publish.await_count == 2
+        assert await self.pending() == []
+        assert any(record.name == "app.messaging.outbox_dispatcher" and record.levelname == "ERROR" for record in caplog.records)

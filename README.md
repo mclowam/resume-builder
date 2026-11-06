@@ -163,11 +163,11 @@ npm run test:browser
 
 ### Backend
 
-Из каталога каждого Python-сервиса в отдельном окружении с его зависимостями:
+Тесты используют pytest, pytest-asyncio и pytest-subtests. Запускать из каталога каждого Python-сервиса в отдельном окружении:
 
 ```powershell
-python -m pip install -r requirements.txt
-python -m unittest discover -s tests
+python -m pip install -r requirements-test.txt
+python -m pytest
 ```
 
 Для локального запуска API/Alembic нужно предварительно экспортировать настройки в окружение процесса. У каждого сервиса свой пакет `app`, поэтому команды запускаются из соответствующего каталога.
@@ -175,15 +175,17 @@ python -m unittest discover -s tests
 В работающем Compose тесты auth и resume доступны через bind mount:
 
 ```powershell
-docker compose exec -T auth python -m unittest discover -s tests
-docker compose exec -T resume python -m unittest discover -s tests
+docker compose exec -T auth python -m pip install -r requirements-test.txt
+docker compose exec -T resume python -m pip install -r requirements-test.txt
+docker compose exec -T auth python -m pytest
+docker compose exec -T resume python -m pytest
 ```
 
 Тесты репозитория resume требуют `TEST_DATABASE_URL`; без него они пропускаются. Для полной проверки использовать отдельную тестовую PostgreSQL, доступную из процесса тестов. На стандартном локальном Compose можно один раз создать тестовую БД:
 
 ```powershell
 docker compose exec -T resume-postgres psql -U admin -d postgres -c 'CREATE DATABASE resume_test_db;'
-docker compose exec -T -e TEST_DATABASE_URL=postgresql+asyncpg://admin:admin@resume-postgres:5432/resume_test_db resume python -m unittest discover -s tests
+docker compose exec -T -e TEST_DATABASE_URL=postgresql+asyncpg://admin:admin@resume-postgres:5432/resume_test_db resume python -m pytest
 ```
 
 Тесты создают случайные схемы и удаляют их после выполнения. Не указывать рабочую БД для проверки нового или изменённого тестового кода.
@@ -191,7 +193,7 @@ docker compose exec -T -e TEST_DATABASE_URL=postgresql+asyncpg://admin:admin@res
 Образ worker содержит только приложение. Для его тестов без установки Python на хост:
 
 ```powershell
-docker compose run --rm --no-deps -v "${PWD}/backend/worker/tests:/service/tests:ro" worker python -m unittest discover -s tests
+docker compose run --rm --no-deps -v "${PWD}/backend/worker:/service:ro" worker sh -c "pip install -r requirements-test.txt && python -m pytest -p no:cacheprovider"
 ```
 
 Эти тесты используют подставные ответы провайдера и не подтверждают качество адаптации реальной LLM. Ручные прогоны с подходящим опытом, отсутствующими навыками и намеренно ложным фактом описаны в [worker/README.md](backend/worker/README.md#три-ручных-сценария). Они вызывают платный API.

@@ -1,8 +1,8 @@
-import unittest
 import uuid
 from unittest.mock import AsyncMock, Mock
 
 import httpx
+import pytest
 
 from app.schemas.event import ResumeUploadedEvent, VacancyUploadedEvent
 from app.schemas.embedding import PatchEmbeddingSchema
@@ -10,8 +10,9 @@ from app.services.document import DocumentService
 from app.services.pipeline import PipelineService
 
 
-class PipelineServiceTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
+class TestPipelineService:
+    @pytest.fixture(autouse=True)
+    def setup(self):
         self.resume_client = AsyncMock()
         self.vacancy_client = AsyncMock()
         self.resume_client.get_embedding.return_value = None
@@ -35,7 +36,7 @@ class PipelineServiceTests(unittest.IsolatedAsyncioTestCase):
             data={"vacancy_id": self.resource_id, "user_id": self.user_id},
         )
 
-    async def test_skips_existing_embeddings(self):
+    async def test_skips_existing_embeddings(self, subtests):
         self.resume_client.get_resume.return_value = b"resume file"
         self.extractor.extract.return_value = "Full resume text"
         self.vacancy_client.get_vacancy.return_value = {"text": "Full vacancy text"}
@@ -44,10 +45,10 @@ class PipelineServiceTests(unittest.IsolatedAsyncioTestCase):
             (self.vacancy_event, self.vacancy_client),
         ):
             for embedding in ([0.1, -0.2], []):
-                with self.subTest(event_type=event.event_type, embedding=embedding):
+                with subtests.test(event_type=event.event_type, embedding=embedding):
                     client.get_embedding.return_value = embedding
 
-                    self.assertIsNone(await self.pipeline.process(event))
+                    assert await self.pipeline.process(event) is None
 
                     client.get_embedding.assert_awaited_with(self.resource_id, self.user_id)
         self.resume_client.get_resume.assert_not_awaited()
@@ -73,25 +74,25 @@ class PipelineServiceTests(unittest.IsolatedAsyncioTestCase):
         first = await self.pipeline.process(self.vacancy_event)
         second = await self.pipeline.process(self.vacancy_event)
 
-        self.assertEqual(first.embedding, [0.1, -0.2])
-        self.assertIsNone(second)
+        assert first.embedding == [0.1, -0.2]
+        assert second is None
         self.embedding_client.embed.assert_awaited_once_with("Full vacancy text")
         self.vacancy_client.get_vacancy.assert_awaited_once()
         self.vacancy_client.set_embedding.assert_awaited_once()
 
-    async def test_propagates_embedding_lookup_error(self):
+    async def test_propagates_embedding_lookup_error(self, subtests):
         for event, client in (
             (self.resume_event, self.resume_client),
             (self.vacancy_event, self.vacancy_client),
         ):
-            with self.subTest(event_type=event.event_type):
+            with subtests.test(event_type=event.event_type):
                 error = httpx.ReadTimeout("Timed out")
                 client.get_embedding.side_effect = error
 
-                with self.assertRaises(httpx.ReadTimeout) as raised:
+                with pytest.raises(httpx.ReadTimeout) as raised:
                     await self.pipeline.process(event)
 
-                self.assertIs(raised.exception, error)
+                assert raised.value is error
         self.resume_client.get_resume.assert_not_awaited()
         self.vacancy_client.get_vacancy.assert_not_awaited()
         self.embedding_client.embed.assert_not_awaited()
@@ -103,12 +104,12 @@ class PipelineServiceTests(unittest.IsolatedAsyncioTestCase):
 
         document = await self.pipeline.process(self.resume_event)
 
-        self.assertEqual(document.text, "  Разработчик\nPython\nОпыт работы  ")
-        self.assertEqual(document.document_id, self.resource_id)
-        self.assertEqual(document.user_id, self.user_id)
-        self.assertEqual(document.document_type, "resume")
-        self.assertEqual(document.embedding, [0.1, -0.2])
-        self.assertEqual(document.embedding_model, "text-embedding-3-small")
+        assert document.text == "  Разработчик\nPython\nОпыт работы  "
+        assert document.document_id == self.resource_id
+        assert document.user_id == self.user_id
+        assert document.document_type == "resume"
+        assert document.embedding == [0.1, -0.2]
+        assert document.embedding_model == "text-embedding-3-small"
         self.embedding_client.embed.assert_awaited_once_with(document.text)
         self.resume_client.get_resume.assert_awaited_once_with(
             resume_id=self.resource_id, user_id=self.user_id,
@@ -128,12 +129,12 @@ class PipelineServiceTests(unittest.IsolatedAsyncioTestCase):
 
         document = await self.pipeline.process(self.vacancy_event)
 
-        self.assertEqual(document.text, "  Backend developer\nPython, PostgreSQL  ")
-        self.assertEqual(document.document_id, self.resource_id)
-        self.assertEqual(document.user_id, self.user_id)
-        self.assertEqual(document.document_type, "vacancy")
-        self.assertEqual(document.embedding, [0.1, -0.2])
-        self.assertEqual(document.embedding_model, "text-embedding-3-small")
+        assert document.text == "  Backend developer\nPython, PostgreSQL  "
+        assert document.document_id == self.resource_id
+        assert document.user_id == self.user_id
+        assert document.document_type == "vacancy"
+        assert document.embedding == [0.1, -0.2]
+        assert document.embedding_model == "text-embedding-3-small"
         self.embedding_client.embed.assert_awaited_once_with(document.text)
         self.vacancy_client.get_vacancy.assert_awaited_once_with(
             vacancy_id=self.resource_id, user_id=self.user_id,
@@ -146,23 +147,23 @@ class PipelineServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.resume_client.set_embedding.assert_not_awaited()
 
-    async def test_rejects_empty_vacancy_text(self):
+    async def test_rejects_empty_vacancy_text(self, subtests):
         for text in ("", " \t\n "):
-            with self.subTest(text=text):
+            with subtests.test(text=text):
                 self.vacancy_client.get_vacancy.return_value = {"text": text}
 
-                with self.assertRaises(ValueError):
+                with pytest.raises(ValueError):
                     await self.pipeline.process(self.vacancy_event)
         self.embedding_client.embed.assert_not_awaited()
         self.assert_no_embeddings_saved()
 
-    async def test_rejects_empty_resume_text(self):
+    async def test_rejects_empty_resume_text(self, subtests):
         self.resume_client.get_resume.return_value = b"resume file"
         for text in ("", " \t\n "):
-            with self.subTest(text=text):
+            with subtests.test(text=text):
                 self.extractor.extract.return_value = text
 
-                with self.assertRaises(ValueError):
+                with pytest.raises(ValueError):
                     await self.pipeline.process(self.resume_event)
         self.embedding_client.embed.assert_not_awaited()
         self.assert_no_embeddings_saved()
@@ -172,10 +173,10 @@ class PipelineServiceTests(unittest.IsolatedAsyncioTestCase):
         error = ValueError("Invalid embedding response")
         self.embedding_client.embed.side_effect = error
 
-        with self.assertRaises(ValueError) as raised:
+        with pytest.raises(ValueError) as raised:
             await self.pipeline.process(self.vacancy_event)
 
-        self.assertIs(raised.exception, error)
+        assert raised.value is error
         self.assert_no_embeddings_saved()
 
     async def test_propagates_extraction_error(self):
@@ -183,18 +184,18 @@ class PipelineServiceTests(unittest.IsolatedAsyncioTestCase):
         error = ValueError("Invalid resume file")
         self.extractor.extract.side_effect = error
 
-        with self.assertRaises(ValueError) as raised:
+        with pytest.raises(ValueError) as raised:
             await self.pipeline.process(self.resume_event)
 
-        self.assertIs(raised.exception, error)
+        assert raised.value is error
         self.assert_no_embeddings_saved()
 
-    async def test_propagates_http_errors(self):
+    async def test_propagates_http_errors(self, subtests):
         for event, method in (
             (self.resume_event, self.resume_client.get_resume),
             (self.vacancy_event, self.vacancy_client.get_vacancy),
         ):
-            with self.subTest(event_type=event.event_type):
+            with subtests.test(event_type=event.event_type):
                 request = httpx.Request("GET", "http://resume/internal/resource")
                 response = httpx.Response(403, request=request)
                 error = httpx.HTTPStatusError(
@@ -202,14 +203,14 @@ class PipelineServiceTests(unittest.IsolatedAsyncioTestCase):
                 )
                 method.side_effect = error
 
-                with self.assertRaises(httpx.HTTPStatusError) as raised:
+                with pytest.raises(httpx.HTTPStatusError) as raised:
                     await self.pipeline.process(event)
 
-                self.assertIs(raised.exception, error)
+                assert raised.value is error
         self.extractor.extract.assert_not_called()
         self.assert_no_embeddings_saved()
 
-    async def test_propagates_embedding_save_errors(self):
+    async def test_propagates_embedding_save_errors(self, subtests):
         self.resume_client.get_resume.return_value = b"resume file"
         self.extractor.extract.return_value = "Full text"
         self.vacancy_client.get_vacancy.return_value = {"text": "Full text"}
@@ -217,7 +218,7 @@ class PipelineServiceTests(unittest.IsolatedAsyncioTestCase):
             (self.resume_event, self.resume_client.set_embedding),
             (self.vacancy_event, self.vacancy_client.set_embedding),
         ):
-            with self.subTest(event_type=event.event_type):
+            with subtests.test(event_type=event.event_type):
                 request = httpx.Request("PATCH", "http://resume/internal/resource")
                 response = httpx.Response(500, request=request)
                 error = httpx.HTTPStatusError(
@@ -225,16 +226,12 @@ class PipelineServiceTests(unittest.IsolatedAsyncioTestCase):
                 )
                 method.side_effect = error
 
-                with self.assertRaises(httpx.HTTPStatusError) as raised:
+                with pytest.raises(httpx.HTTPStatusError) as raised:
                     await self.pipeline.process(event)
 
-                self.assertIs(raised.exception, error)
+                assert raised.value is error
                 method.assert_awaited_once()
 
     def assert_no_embeddings_saved(self):
         self.resume_client.set_embedding.assert_not_awaited()
         self.vacancy_client.set_embedding.assert_not_awaited()
-
-
-if __name__ == "__main__":
-    unittest.main()

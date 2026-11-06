@@ -1,9 +1,9 @@
 import json
-import unittest
 import uuid
 from unittest.mock import patch
 
 import httpx
+import pytest
 
 from app.clients.resume import ResumeHttpClient
 from app.clients.vacancy import VacancyHttpClient
@@ -11,8 +11,10 @@ from app.core.core import settings
 from app.schemas.embedding import PatchEmbeddingSchema
 
 
-class DocumentClientTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
+class TestDocumentClient:
+    @pytest.fixture(autouse=True)
+    def setup(self, cleanup):
+        self.cleanup = cleanup
         self.resource_id = uuid.uuid4()
         self.user_id = uuid.uuid4()
         self.data = PatchEmbeddingSchema(embedding=[0.1, -0.2])
@@ -25,14 +27,14 @@ class DocumentClientTests(unittest.IsolatedAsyncioTestCase):
             patch("httpx.AsyncClient", side_effect=lambda **kwargs: async_client(transport=transport, **kwargs)),
         ):
             client = client_type("http://resume:8000")
-        self.addAsyncCleanup(client.close)
+        self.cleanup.push_async_callback(client.close)
         return client
 
-    async def test_patches_embedding_for_owner(self):
+    async def test_patches_embedding_for_owner(self, subtests):
         for client_type, resource in (
             (ResumeHttpClient, "resumes"), (VacancyHttpClient, "vacancies"),
         ):
-            with self.subTest(resource=resource):
+            with subtests.test(resource=resource):
                 requests = []
                 result = {"id": str(self.resource_id), "embedding": [0.1, -0.2]}
 
@@ -43,23 +45,20 @@ class DocumentClientTests(unittest.IsolatedAsyncioTestCase):
                 client = self.create_client(client_type, handler)
                 response = await client.set_embedding(self.resource_id, self.user_id, self.data)
 
-                self.assertEqual(response, result)
-                self.assertEqual(len(requests), 1)
+                assert response == result
+                assert len(requests) == 1
                 request = requests[0]
-                self.assertEqual(request.method, "PATCH")
-                self.assertEqual(
-                    str(request.url),
-                    f"http://resume:8000/internal/{resource}/{self.resource_id}?user_id={self.user_id}",
-                )
-                self.assertEqual(request.headers["X-Worker-Token"], "test-worker-token")
-                self.assertEqual(json.loads(request.content), {"embedding": [0.1, -0.2]})
+                assert request.method == "PATCH"
+                assert str(request.url) == f"http://resume:8000/internal/{resource}/{self.resource_id}?user_id={self.user_id}"
+                assert request.headers["X-Worker-Token"] == "test-worker-token"
+                assert json.loads(request.content) == {"embedding": [0.1, -0.2]}
 
-    async def test_gets_embedding_for_owner(self):
+    async def test_gets_embedding_for_owner(self, subtests):
         for client_type, resource in (
             (ResumeHttpClient, "resumes"), (VacancyHttpClient, "vacancies"),
         ):
             for embedding in (None, [], [0.1, -0.2]):
-                with self.subTest(resource=resource, embedding=embedding):
+                with subtests.test(resource=resource, embedding=embedding):
                     requests = []
 
                     def handler(request):
@@ -68,50 +67,43 @@ class DocumentClientTests(unittest.IsolatedAsyncioTestCase):
 
                     client = self.create_client(client_type, handler)
 
-                    self.assertEqual(await client.get_embedding(self.resource_id, self.user_id), embedding)
-                    self.assertEqual(len(requests), 1)
-                    self.assertEqual(requests[0].method, "GET")
-                    self.assertEqual(
-                        str(requests[0].url),
-                        f"http://resume:8000/internal/{resource}/{self.resource_id}/embedding?user_id={self.user_id}",
-                    )
-                    self.assertEqual(requests[0].headers["X-Worker-Token"], "test-worker-token")
+                    assert await client.get_embedding(self.resource_id, self.user_id) == embedding
+                    assert len(requests) == 1
+                    assert requests[0].method == "GET"
+                    assert str(requests[0].url) == f"http://resume:8000/internal/{resource}/{self.resource_id}/embedding?user_id={self.user_id}"
+                    assert requests[0].headers["X-Worker-Token"] == "test-worker-token"
 
-    async def test_propagates_embedding_lookup_errors(self):
+    async def test_propagates_embedding_lookup_errors(self, subtests):
         for client_type in (ResumeHttpClient, VacancyHttpClient):
             for status in (401, 404, 500):
-                with self.subTest(client=client_type.__name__, status=status):
+                with subtests.test(client=client_type.__name__, status=status):
                     client = self.create_client(
                         client_type, lambda request: httpx.Response(status, text="Failed"),
                     )
 
-                    with self.assertRaises(httpx.HTTPStatusError):
+                    with pytest.raises(httpx.HTTPStatusError):
                         await client.get_embedding(self.resource_id, self.user_id)
 
-    async def test_propagates_patch_status_errors(self):
+    async def test_propagates_patch_status_errors(self, subtests):
         for client_type in (ResumeHttpClient, VacancyHttpClient):
             for status in (401, 404, 500):
-                with self.subTest(client=client_type.__name__, status=status):
+                with subtests.test(client=client_type.__name__, status=status):
                     client = self.create_client(
                         client_type, lambda request: httpx.Response(status, text="Failed"),
                     )
 
-                    with self.assertRaises(httpx.HTTPStatusError) as raised:
+                    with pytest.raises(httpx.HTTPStatusError) as raised:
                         await client.set_embedding(self.resource_id, self.user_id, self.data)
 
-                    self.assertEqual(raised.exception.response.status_code, status)
+                    assert raised.value.response.status_code == status
 
-    async def test_propagates_patch_timeout(self):
+    async def test_propagates_patch_timeout(self, subtests):
         def handler(request):
             raise httpx.ReadTimeout("Timed out", request=request)
 
         for client_type in (ResumeHttpClient, VacancyHttpClient):
-            with self.subTest(client=client_type.__name__):
+            with subtests.test(client=client_type.__name__):
                 client = self.create_client(client_type, handler)
 
-                with self.assertRaises(httpx.ReadTimeout):
+                with pytest.raises(httpx.ReadTimeout):
                     await client.set_embedding(self.resource_id, self.user_id, self.data)
-
-
-if __name__ == "__main__":
-    unittest.main()

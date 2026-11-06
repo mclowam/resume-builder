@@ -1,20 +1,18 @@
 import json
-import tempfile
-import unittest
-from pathlib import Path
 from unittest.mock import patch
 
 import httpx
+import pytest
 
 from app.adapt_resume import main
 from app.core.core import settings
 
 
-class AdaptResumeCliTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
-        directory = tempfile.TemporaryDirectory()
-        self.addCleanup(directory.cleanup)
-        self.directory = Path(directory.name)
+class TestAdaptResumeCli:
+    @pytest.fixture(autouse=True)
+    def setup(self, cleanup, tmp_path):
+        self.cleanup = cleanup
+        self.directory = tmp_path
         self.resume = self.directory / "resume.txt"
         self.vacancy = self.directory / "vacancy.txt"
         self.output = self.directory / "result.json"
@@ -33,7 +31,7 @@ class AdaptResumeCliTests(unittest.IsolatedAsyncioTestCase):
         client = httpx.AsyncClient(
             base_url="https://api.openai.com/v1/", transport=httpx.MockTransport(handler),
         )
-        self.addAsyncCleanup(client.aclose)
+        self.cleanup.push_async_callback(client.aclose)
         with (
             patch.object(settings, "OPENAI_API_KEY", "test-key"),
             patch("app.clients.llm.httpx.AsyncClient", return_value=client),
@@ -41,7 +39,7 @@ class AdaptResumeCliTests(unittest.IsolatedAsyncioTestCase):
             try:
                 await main(self.arguments + list(extra_arguments))
             finally:
-                self.assertTrue(client.is_closed)
+                assert client.is_closed
 
     def completion(self, result):
         return httpx.Response(200, json={"choices": [{
@@ -56,17 +54,17 @@ class AdaptResumeCliTests(unittest.IsolatedAsyncioTestCase):
         ])
 
         output = self.output.read_text(encoding="utf-8")
-        self.assertIn("Иван", output)
-        self.assertEqual(json.loads(output), {
+        assert "Иван" in output
+        assert json.loads(output) == {
             "resume_text": "Иван\nPython, Docker",
             "review": {"passed": False, "issues": ["Docker не подтверждён."]},
-        })
-        self.assertEqual(len(self.requests), 3)
+        }
+        assert len(self.requests) == 3
         for request in self.requests:
-            self.assertEqual(request["model"], "test-model")
+            assert request["model"] == "test-model"
             data = json.loads(request["messages"][1]["content"])
-            self.assertEqual(data["resume"], "Иван\nРазработчик Python")
-            self.assertEqual(data["vacancy"], "Python и Docker")
+            assert data["resume"] == "Иван\nРазработчик Python"
+            assert data["vacancy"] == "Python и Docker"
 
     async def test_reviews_supplied_resume_without_running_adaptation(self):
         tailored = self.directory / "tailored.txt"
@@ -77,23 +75,23 @@ class AdaptResumeCliTests(unittest.IsolatedAsyncioTestCase):
             ["--tailored-resume", str(tailored)],
         )
 
-        self.assertEqual(json.loads(self.output.read_text(encoding="utf-8")), {
+        assert json.loads(self.output.read_text(encoding="utf-8")) == {
             "passed": False, "issues": ["Docker не подтверждён."],
-        })
-        self.assertEqual(len(self.requests), 1)
+        }
+        assert len(self.requests) == 1
         data = json.loads(self.requests[0]["messages"][1]["content"])
-        self.assertEqual(data["tailor_result"], {"resume_text": "Иван\nPython, Docker"})
+        assert data["tailor_result"] == {"resume_text": "Иван\nPython, Docker"}
 
     async def test_api_error_does_not_write_output(self):
-        with self.assertRaises(httpx.HTTPStatusError):
+        with pytest.raises(httpx.HTTPStatusError):
             await self.run_cli([httpx.Response(429)])
 
-        self.assertFalse(self.output.exists())
+        assert not self.output.exists()
 
     async def test_rejects_output_path_pointing_to_input_before_llm_call(self):
         self.arguments[2] = str(self.resume)
-        with self.assertRaises(SystemExit) as error:
+        with pytest.raises(SystemExit) as error:
             await main(self.arguments)
 
-        self.assertEqual(error.exception.code, 2)
-        self.assertEqual(self.resume.read_text(encoding="utf-8-sig"), "Иван\nРазработчик Python")
+        assert error.value.code == 2
+        assert self.resume.read_text(encoding="utf-8-sig") == "Иван\nРазработчик Python"

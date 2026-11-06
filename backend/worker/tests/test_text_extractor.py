@@ -1,7 +1,7 @@
 from io import BytesIO
-import unittest
 from zipfile import ZipFile
 
+import pytest
 from docx import Document
 from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
@@ -9,8 +9,9 @@ from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 from app.services.text_extractor import TextExtractor
 
 
-class TextExtractorTests(unittest.TestCase):
-    def setUp(self):
+class TestTextExtractor:
+    @pytest.fixture(autouse=True)
+    def setup(self):
         self.extractor = TextExtractor()
 
     def pdf_bytes(self, texts, encrypted=False):
@@ -41,7 +42,7 @@ class TextExtractorTests(unittest.TestCase):
 
     def test_pdf_all_pages(self):
         text = self.extractor.extract(self.pdf_bytes(["Python developer", "Experience"]))
-        self.assertEqual(text, "Python developer\nExperience")
+        assert text == "Python developer\nExperience"
 
     def test_docx_paragraphs_and_tables_in_order(self):
         document = Document()
@@ -50,28 +51,21 @@ class TextExtractorTests(unittest.TestCase):
         table.cell(0, 0).text = "Python"
         table.cell(0, 1).text = "PostgreSQL"
         document.add_paragraph("Опыт работы")
-        self.assertEqual(
-            self.extractor.extract(self.docx_bytes(document)),
-            "Разработчик\nPython\nPostgreSQL\nОпыт работы",
-        )
+        assert self.extractor.extract(self.docx_bytes(document)) == "Разработчик\nPython\nPostgreSQL\nОпыт работы"
 
-    def test_empty_text_rejected(self):
+    def test_empty_text_rejected(self, subtests):
         document = Document()
         document.add_paragraph(" \t\n ")
         for data in (self.pdf_bytes([""]), self.docx_bytes(Document()), self.docx_bytes(document)):
-            with self.subTest(data=data[:10]):
-                with self.assertRaisesRegex(ValueError, "Resume text must not be empty"):
+            with subtests.test(data=data[:10]):
+                with pytest.raises(ValueError, match="Resume text must not be empty"):
                     self.extractor.extract(data)
 
-    def test_invalid_files_rejected(self):
+    def test_invalid_files_rejected(self, subtests):
         archive = BytesIO()
         with ZipFile(archive, "w") as target:
             target.writestr("test.txt", "text")
         for data in (b"", b"plain text", b"%PDF-1.7\nbroken", archive.getvalue(), self.pdf_bytes(["text"], encrypted=True)):
-            with self.subTest(data=data[:10]):
-                with self.assertRaises(ValueError):
+            with subtests.test(data=data[:10]):
+                with pytest.raises(ValueError):
                     self.extractor.extract(data)
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -89,8 +89,11 @@ python -m app.adapt_resume examples/resume.txt examples/vacancy_match.txt exampl
 
 ## Автоматические тесты
 
+Из `backend/worker` в отдельном Python-окружении:
+
 ```powershell
-python -m unittest discover -s tests
+python -m pip install -r requirements-test.txt
+python -m pytest
 ```
 
 Тесты используют подставные HTTP-ответы и проверяют код, а не качество реальной LLM.

@@ -1,10 +1,10 @@
 import asyncio
 import json
 import os
-import unittest
 import uuid
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -19,18 +19,20 @@ from app.repositories.adaptation import AdaptationRepository
 from app.schemas.adaptation import AdaptationCreateSchema, AdaptationFinishSchema
 
 
-@unittest.skipUnless(os.getenv("TEST_DATABASE_URL"), "TEST_DATABASE_URL is required")
-class AdaptationRepositoryTests(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
+@pytest.mark.skipif(not os.getenv("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL is required")
+class TestAdaptationRepository:
+    @pytest.fixture(autouse=True)
+    async def setup(self, cleanup):
+        self.cleanup = cleanup
         self.schema = f"adaptation_test_{uuid.uuid4().hex}"
         self.engine = create_async_engine(
             os.environ["TEST_DATABASE_URL"],
             connect_args={"server_settings": {"search_path": self.schema}},
         )
-        self.addAsyncCleanup(self.engine.dispose)
+        self.cleanup.push_async_callback(self.engine.dispose)
         async with self.engine.begin() as connection:
             await connection.execute(text(f'CREATE SCHEMA "{self.schema}"'))
-        self.addAsyncCleanup(self.drop_schema)
+        self.cleanup.push_async_callback(self.drop_schema)
         async with self.engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
@@ -58,11 +60,11 @@ class AdaptationRepositoryTests(unittest.IsolatedAsyncioTestCase):
                 result = await repository.add(
                     AdaptationCreateSchema(resume_id=self.resume_id, vacancy_id=vacancy_id), self.user_id,
                 )
-                self.assertEqual(result.status, "pending")
-                self.assertIsNone(result.result)
-                self.assertIsNone(result.error)
+                assert result.status == "pending"
+                assert result.result is None
+                assert result.error is None
                 adaptations.append(result)
-        self.assertNotEqual(adaptations[0].id, adaptations[1].id)
+        assert adaptations[0].id != adaptations[1].id
 
         async with self.sessions() as session:
             for adaptation, result_text, review in zip(adaptations, ("Python resume", "SQL resume"), (
@@ -77,16 +79,16 @@ class AdaptationRepositoryTests(unittest.IsolatedAsyncioTestCase):
             repository = AdaptationRepository(session)
             first = await repository.get_by_id(adaptations[0].id, self.user_id)
             second = await repository.get_by_id(adaptations[1].id, self.user_id)
-            self.assertEqual(first.result.resume_text, "Python resume")
-            self.assertTrue(first.result.review.passed)
-            self.assertEqual(second.result.resume_text, "SQL resume")
-            self.assertFalse(second.result.review.passed)
-            self.assertEqual(second.result.review.issues, ["Unsupported fact"])
+            assert first.result.resume_text == "Python resume"
+            assert first.result.review.passed
+            assert second.result.resume_text == "SQL resume"
+            assert not second.result.review.passed
+            assert second.result.review.issues == ["Unsupported fact"]
             original = await session.get(Resume, self.resume_id)
-            self.assertEqual(original.file_url, "http://minio/resumes/original.pdf")
-            self.assertEqual(original.embedding, [0.1, 0.2])
+            assert original.file_url == "http://minio/resumes/original.pdf"
+            assert original.embedding == [0.1, 0.2]
             for vacancy_id, expected in zip(self.vacancy_ids, ("Python", "PostgreSQL")):
-                self.assertEqual((await session.get(Vacancy, vacancy_id)).text, expected)
+                assert (await session.get(Vacancy, vacancy_id)).text == expected
 
     async def test_owner_scope_hides_foreign_and_missing_records(self):
         async with self.sessions() as session:
@@ -96,8 +98,8 @@ class AdaptationRepositoryTests(unittest.IsolatedAsyncioTestCase):
             )
         async with self.sessions() as session:
             repository = AdaptationRepository(session)
-            self.assertIsNone(await repository.get_by_id(adaptation.id, uuid.uuid4()))
-            self.assertIsNone(await repository.get_by_id(uuid.uuid4(), self.user_id))
+            assert await repository.get_by_id(adaptation.id, uuid.uuid4()) is None
+            assert await repository.get_by_id(uuid.uuid4(), self.user_id) is None
 
     async def test_repeated_pair_creates_independent_records_and_preserves_error(self):
         data = AdaptationCreateSchema(resume_id=self.resume_id, vacancy_id=self.vacancy_ids[0])
@@ -105,7 +107,7 @@ class AdaptationRepositoryTests(unittest.IsolatedAsyncioTestCase):
             repository = AdaptationRepository(session)
             first = await repository.add(data, self.user_id)
             second = await repository.add(data, self.user_id)
-            self.assertNotEqual(first.id, second.id)
+            assert first.id != second.id
             stored = await session.get(Adaptation, first.id)
             stored.status = "failed"
             stored.error = "LLM unavailable"
@@ -113,10 +115,10 @@ class AdaptationRepositoryTests(unittest.IsolatedAsyncioTestCase):
         async with self.sessions() as session:
             repository = AdaptationRepository(session)
             failed = await repository.get_by_id(first.id, self.user_id)
-            self.assertEqual(failed.status, "failed")
-            self.assertEqual(failed.error, "LLM unavailable")
-            self.assertIsNone(failed.result)
-            self.assertEqual((await repository.get_by_id(second.id, self.user_id)).status, "pending")
+            assert failed.status == "failed"
+            assert failed.error == "LLM unavailable"
+            assert failed.result is None
+            assert (await repository.get_by_id(second.id, self.user_id)).status == "pending"
 
     async def test_adaptation_outbox_retries_and_publishes_worker_wire_format(self):
         async with self.sessions() as session:
@@ -126,36 +128,36 @@ class AdaptationRepositoryTests(unittest.IsolatedAsyncioTestCase):
         redis = AsyncMock()
         redis.rpush.side_effect = ConnectionError("Redis unavailable")
         dispatcher = OutboxDispatcher(self.sessions, RedisPublisher(redis, "embedding_tasks"))
-        with self.assertRaises(ConnectionError):
+        with pytest.raises(ConnectionError):
             await dispatcher.dispatch_one()
         async with self.sessions() as session:
             events = (await session.scalars(select(OutboxEvent))).all()
-            self.assertEqual(len(events), 1)
-            self.assertEqual(events[0].payload, {
+            assert len(events) == 1
+            assert events[0].payload == {
                 "event_type": "adaptation.requested", "adaptation_id": str(adaptation.id), "user_id": str(self.user_id),
-            })
-            self.assertIsNotNone(await session.get(Adaptation, adaptation.id))
+            }
+            assert await session.get(Adaptation, adaptation.id) is not None
         redis.rpush.side_effect = None
-        self.assertTrue(await dispatcher.dispatch_one())
+        assert await dispatcher.dispatch_one()
         queue, payload = redis.rpush.call_args.args
-        self.assertEqual(queue, "embedding_tasks")
-        self.assertEqual(json.loads(payload), {
+        assert queue == "embedding_tasks"
+        assert json.loads(payload) == {
             "event_type": "adaptation.requested",
             "data": {"adaptation_id": str(adaptation.id), "user_id": str(self.user_id)},
-        })
-        self.assertFalse(await dispatcher.dispatch_one())
+        }
+        assert not await dispatcher.dispatch_one()
 
     async def test_failed_transaction_rolls_back_adaptation_and_outbox(self):
         async with self.sessions() as session:
             with patch.object(session, "commit", side_effect=RuntimeError("Commit failed")):
-                with self.assertRaises(RuntimeError):
+                with pytest.raises(RuntimeError):
                     await AdaptationRepository(session).add(
                         AdaptationCreateSchema(resume_id=self.resume_id, vacancy_id=self.vacancy_ids[0]), self.user_id,
                     )
             await session.rollback()
         async with self.sessions() as session:
-            self.assertEqual((await session.scalars(select(Adaptation))).all(), [])
-            self.assertEqual((await session.scalars(select(OutboxEvent))).all(), [])
+            assert (await session.scalars(select(Adaptation))).all() == []
+            assert (await session.scalars(select(OutboxEvent))).all() == []
 
     async def test_concurrent_claim_has_one_winner_and_terminal_result_is_immutable(self):
         async with self.sessions() as session:
@@ -168,21 +170,21 @@ class AdaptationRepositoryTests(unittest.IsolatedAsyncioTestCase):
                 return await AdaptationRepository(session).claim(adaptation.id, self.user_id)
 
         results = await asyncio.gather(claim(), claim())
-        self.assertEqual(sum(result is not None for result in results), 1)
+        assert sum(result is not None for result in results) == 1
         done = AdaptationFinishSchema(status="done", result={
             "resume_text": "Python", "review": {"passed": False, "issues": ["Unconfirmed fact"]},
         })
         async with self.sessions() as session:
             repository = AdaptationRepository(session)
-            self.assertIsNone(await repository.finish(adaptation.id, uuid.uuid4(), done))
+            assert await repository.finish(adaptation.id, uuid.uuid4(), done) is None
             result = await repository.finish(adaptation.id, self.user_id, done)
-            self.assertEqual(result.status, "done")
-            self.assertFalse(result.result.review.passed)
-            self.assertIsNone(await repository.claim(adaptation.id, self.user_id))
-            self.assertIsNone(await repository.finish(
+            assert result.status == "done"
+            assert not result.result.review.passed
+            assert await repository.claim(adaptation.id, self.user_id) is None
+            assert await repository.finish(
                 adaptation.id, self.user_id, AdaptationFinishSchema(status="failed", error="late error"),
-            ))
-            self.assertEqual((await repository.get_by_id(adaptation.id, self.user_id)).result.resume_text, "Python")
+            ) is None
+            assert (await repository.get_by_id(adaptation.id, self.user_id)).result.resume_text == "Python"
 
     async def test_failed_status_is_saved_only_after_claim_by_owner(self):
         async with self.sessions() as session:
@@ -191,10 +193,10 @@ class AdaptationRepositoryTests(unittest.IsolatedAsyncioTestCase):
                 AdaptationCreateSchema(resume_id=self.resume_id, vacancy_id=self.vacancy_ids[0]), self.user_id,
             )
             failed = AdaptationFinishSchema(status="failed", error="LLM unavailable")
-            self.assertIsNone(await repository.claim(adaptation.id, uuid.uuid4()))
-            self.assertIsNone(await repository.finish(adaptation.id, self.user_id, failed))
+            assert await repository.claim(adaptation.id, uuid.uuid4()) is None
+            assert await repository.finish(adaptation.id, self.user_id, failed) is None
             await repository.claim(adaptation.id, self.user_id)
             result = await repository.finish(adaptation.id, self.user_id, failed)
-            self.assertEqual(result.error, "LLM unavailable")
-            self.assertEqual(result.status, "failed")
-            self.assertIsNone(result.result)
+            assert result.error == "LLM unavailable"
+            assert result.status == "failed"
+            assert result.result is None

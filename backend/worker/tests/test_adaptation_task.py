@@ -1,16 +1,17 @@
 import asyncio
-import unittest
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import pytest
 from app.schemas.event import AdaptationRequestedData, AdaptationRequestedEvent
 from app.schemas.resume_adaptation import ResumeAdaptationResult
 from app.services.adaptation_task import AdaptationTaskService
 
 
-class AdaptationTaskTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
+class TestAdaptationTask:
+    @pytest.fixture(autouse=True)
+    def setup(self):
         self.event = AdaptationRequestedEvent(
             event_type="adaptation.requested",
             data=AdaptationRequestedData(adaptation_id=uuid.uuid4(), user_id=uuid.uuid4()),
@@ -31,9 +32,9 @@ class AdaptationTaskTests(unittest.IsolatedAsyncioTestCase):
 
         self.adaptation.run.assert_awaited_once_with("Original Python resume", "Python vacancy")
         events = [call.args[0] for call in self.documents.get_document.await_args_list]
-        self.assertEqual(str(events[0].data.resume_id), self.claim["resume_id"])
-        self.assertEqual(str(events[1].data.vacancy_id), self.claim["vacancy_id"])
-        self.assertTrue(all(event.data.user_id == self.event.data.user_id for event in events))
+        assert str(events[0].data.resume_id) == self.claim["resume_id"]
+        assert str(events[1].data.vacancy_id) == self.claim["vacancy_id"]
+        assert all(event.data.user_id == self.event.data.user_id for event in events)
         self.client.save.assert_awaited_once_with(
             self.event.data.adaptation_id, self.event.data.user_id,
             {"status": "done", "result": self.result.model_dump(mode="json"), "error": None},
@@ -46,32 +47,30 @@ class AdaptationTaskTests(unittest.IsolatedAsyncioTestCase):
         self.adaptation.run.assert_not_awaited()
         self.client.save.assert_not_awaited()
 
-    async def test_document_and_llm_errors_are_saved_without_private_error_text(self):
-        for name in ("document", "llm"):
-            with self.subTest(stage=name):
-                self.setUp()
-                stage = self.documents.get_document if name == "document" else self.adaptation.run
-                stage.side_effect = ValueError("private original text and key")
-                await self.service.process(self.event)
-                self.client.save.assert_awaited_once_with(
-                    self.event.data.adaptation_id, self.event.data.user_id,
-                    {"status": "failed", "result": None, "error": "ValueError"},
-                )
+    @pytest.mark.parametrize("name", ["document", "llm"])
+    async def test_document_and_llm_errors_are_saved_without_private_error_text(self, name):
+        stage = self.documents.get_document if name == "document" else self.adaptation.run
+        stage.side_effect = ValueError("private original text and key")
+        await self.service.process(self.event)
+        self.client.save.assert_awaited_once_with(
+            self.event.data.adaptation_id, self.event.data.user_id,
+            {"status": "failed", "result": None, "error": "ValueError"},
+        )
 
     async def test_claim_and_save_failures_propagate(self):
         self.client.claim.side_effect = ConnectionError()
-        with self.assertRaises(ConnectionError):
+        with pytest.raises(ConnectionError):
             await self.service.process(self.event)
         self.client.save.assert_not_awaited()
         self.client.claim.side_effect = None
         self.client.save.side_effect = ConnectionError()
-        with self.assertRaises(ConnectionError):
+        with pytest.raises(ConnectionError):
             await self.service.process(self.event)
-        self.assertEqual(self.client.save.await_count, 1)
-        self.assertEqual(self.client.save.call_args.args[2]["status"], "done")
+        assert self.client.save.await_count == 1
+        assert self.client.save.call_args.args[2]["status"] == "done"
 
     async def test_cancellation_does_not_save_failure(self):
         self.adaptation.run.side_effect = asyncio.CancelledError()
-        with self.assertRaises(asyncio.CancelledError):
+        with pytest.raises(asyncio.CancelledError):
             await self.service.process(self.event)
         self.client.save.assert_not_awaited()
