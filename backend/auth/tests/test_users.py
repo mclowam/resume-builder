@@ -1,9 +1,9 @@
 import json
-import unittest
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import pytest
 from fastapi import FastAPI
 
 from app.api.users import api_v1_router
@@ -14,8 +14,9 @@ from app.services.users import UserService
 from app.use_cases.users import get_user_service
 
 
-class UserAccessTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
+class TestUserAccess:
+    @pytest.fixture(autouse=True)
+    def setup(self):
         self.user_id = uuid.uuid4()
         self.user = UserResponseSchema(
             user_id=uuid.uuid4(), username="other-user", is_active=True, is_staff=False,
@@ -69,15 +70,15 @@ class UserAccessTests(unittest.IsolatedAsyncioTestCase):
         self.repository.users.assert_not_called()
         self.repository.get_user_by_id.assert_not_called()
 
-    async def test_anonymous_requests_are_rejected(self):
+    async def test_anonymous_requests_are_rejected(self, subtests):
         for path in (*self.paths, "/auth/me"):
-            with self.subTest(path=path):
+            with subtests.test(path=path):
                 status, headers, _ = await self.request(path)
-                self.assertEqual(status, 401)
-                self.assertEqual(headers[b"www-authenticate"], b"Bearer")
+                assert status == 401
+                assert headers[b"www-authenticate"] == b"Bearer"
         self.assert_no_user_reads()
 
-    async def test_invalid_tokens_are_rejected(self):
+    async def test_invalid_tokens_are_rejected(self, subtests):
         staff_payload = {**self.payload, "is_staff": True}
         expired_tokens = JWTTokenProvider(secret_key=self.secret, access_expire_min=-1)
         other_tokens = JWTTokenProvider(secret_key="another-test-only-secret-key-32-bytes")
@@ -89,44 +90,44 @@ class UserAccessTests(unittest.IsolatedAsyncioTestCase):
         }
         for path in (*self.paths, "/auth/me"):
             for name, token in tokens.items():
-                with self.subTest(path=path, token=name):
+                with subtests.test(path=path, token=name):
                     status, headers, _ = await self.request(path, token=token)
-                    self.assertEqual(status, 401)
-                    self.assertEqual(headers[b"www-authenticate"], b"Bearer")
+                    assert status == 401
+                    assert headers[b"www-authenticate"] == b"Bearer"
         self.assert_no_user_reads()
 
-    async def test_regular_user_cannot_read_users(self):
+    async def test_regular_user_cannot_read_users(self, subtests):
         token = self.tokens.create_access_token(self.payload)
         for path in self.paths:
-            with self.subTest(path=path):
+            with subtests.test(path=path):
                 status, _, body = await self.request(path, token=token)
-                self.assertEqual(status, 403)
-                self.assertEqual(body, {"detail": "Staff access required"})
+                assert status == 403
+                assert body == {"detail": "Staff access required"}
         self.assert_no_user_reads()
 
     async def test_regular_user_cannot_read_own_user_route(self):
         token = self.tokens.create_access_token(self.payload)
         status, _, _ = await self.request(f"/auth/users/{self.user_id}", token=token)
-        self.assertEqual(status, 403)
+        assert status == 403
         self.assert_no_user_reads()
 
-    async def test_client_supplied_role_cannot_grant_access(self):
+    async def test_client_supplied_role_cannot_grant_access(self, subtests):
         token = self.tokens.create_access_token(self.payload)
         for path in self.paths:
-            with self.subTest(path=path):
+            with subtests.test(path=path):
                 status, _, _ = await self.request(
                     path, token=token, query="is_staff=true&role=staff",
                     headers=[(b"is_staff", b"true"), (b"x-role", b"staff")],
                     payload={"is_staff": True, "role": "staff"},
                 )
-                self.assertEqual(status, 403)
+                assert status == 403
         self.assert_no_user_reads()
 
     async def test_staff_can_list_users(self):
         token = self.tokens.create_access_token({**self.payload, "is_staff": True})
         status, _, body = await self.request(self.paths[0], token=token)
-        self.assertEqual(status, 200)
-        self.assertEqual(body, [self.user.model_dump(mode="json")])
+        assert status == 200
+        assert body == [self.user.model_dump(mode="json")]
         self.service.list_users.assert_awaited_once_with()
         self.repository.users.assert_awaited_once_with()
         self.service.detail.assert_not_called()
@@ -134,8 +135,8 @@ class UserAccessTests(unittest.IsolatedAsyncioTestCase):
     async def test_staff_can_read_user(self):
         token = self.tokens.create_access_token({**self.payload, "is_staff": True})
         status, _, body = await self.request(self.paths[1], token=token)
-        self.assertEqual(status, 200)
-        self.assertEqual(body, self.user.model_dump(mode="json"))
+        assert status == 200
+        assert body == self.user.model_dump(mode="json")
         self.service.detail.assert_awaited_once_with(id=self.user.user_id)
         self.repository.get_user_by_id.assert_awaited_once_with(self.user.user_id)
         self.service.list_users.assert_not_called()
@@ -144,22 +145,18 @@ class UserAccessTests(unittest.IsolatedAsyncioTestCase):
         self.repository.get_user_by_id.return_value = None
         token = self.tokens.create_access_token({**self.payload, "is_staff": True})
         status, _, body = await self.request(self.paths[1], token=token)
-        self.assertEqual(status, 404)
-        self.assertEqual(body, {"detail": "User not found"})
+        assert status == 404
+        assert body == {"detail": "User not found"}
         self.service.detail.assert_awaited_once_with(id=self.user.user_id)
         self.repository.get_user_by_id.assert_awaited_once_with(self.user.user_id)
         self.service.list_users.assert_not_called()
 
-    async def test_authenticated_users_can_read_own_profile(self):
+    async def test_authenticated_users_can_read_own_profile(self, subtests):
         for is_staff in (False, True):
-            with self.subTest(is_staff=is_staff):
+            with subtests.test(is_staff=is_staff):
                 payload = {**self.payload, "is_staff": is_staff}
                 token = self.tokens.create_access_token(payload)
                 status, _, body = await self.request("/auth/me", token=token)
-                self.assertEqual(status, 200)
-                self.assertEqual(body, payload)
+                assert status == 200
+                assert body == payload
         self.assert_no_user_reads()
-
-
-if __name__ == "__main__":
-    unittest.main()
