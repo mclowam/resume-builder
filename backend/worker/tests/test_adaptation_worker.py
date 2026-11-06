@@ -1,13 +1,13 @@
 import asyncio
 import io
 import json
-import unittest
 import uuid
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import httpx
+import pytest
 from docx import Document
 
 from app.core.core import settings
@@ -17,8 +17,9 @@ from app.schemas.event import AdaptationRequestedEvent
 from app.use_cases.adaptation_task import get_adaptation_task_service
 
 
-class AdaptationWorkerTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
+class TestAdaptationWorker:
+    @pytest.fixture(autouse=True)
+    def setup(self):
         self.adaptation_id = uuid.uuid4()
         self.user_id = uuid.uuid4()
         self.resume_id = uuid.uuid4()
@@ -47,17 +48,17 @@ class AdaptationWorkerTests(unittest.IsolatedAsyncioTestCase):
                 return httpx.Response(200, json={"choices": [{
                     "finish_reason": "stop", "message": {"content": json.dumps(next(completions))},
                 }]})
-            self.assertEqual(request.headers["X-Worker-Token"], "test-worker-token")
-            self.assertEqual(request.url.params["user_id"], str(self.user_id))
+            assert request.headers["X-Worker-Token"] == "test-worker-token"
+            assert request.url.params["user_id"] == str(self.user_id)
             if request.method == "POST":
-                self.assertEqual(request.url.path, f"/internal/adaptations/{self.adaptation_id}/claim")
+                assert request.url.path == f"/internal/adaptations/{self.adaptation_id}/claim"
                 return httpx.Response(200, json={"resume_id": str(self.resume_id), "vacancy_id": str(self.vacancy_id)})
             if request.url.path == f"/internal/resumes/{self.resume_id}":
                 return httpx.Response(200, content=buffer.getvalue())
             if request.url.path == f"/internal/vacancies/{self.vacancy_id}":
                 return httpx.Response(200, json={"text": "Python vacancy"})
-            self.assertEqual(request.method, "PATCH")
-            self.assertEqual(request.url.path, f"/internal/adaptations/{self.adaptation_id}")
+            assert request.method == "PATCH"
+            assert request.url.path == f"/internal/adaptations/{self.adaptation_id}"
             return httpx.Response(200, json={})
 
         async_client = httpx.AsyncClient
@@ -77,24 +78,24 @@ class AdaptationWorkerTests(unittest.IsolatedAsyncioTestCase):
             async with get_adaptation_task_service() as service:
                 await service.process(self.event)
 
-        self.assertTrue(all(client.is_closed for client in clients))
-        self.assertEqual(len(requests), 7)
+        assert all(client.is_closed for client in clients)
+        assert len(requests) == 7
         result = json.loads(requests[-1].content)
-        self.assertEqual(result, {
+        assert result == {
             "status": "done", "error": None, "result": {
                 "resume_text": "Adapted Python resume",
                 "review": {"passed": False, "issues": ["Unsupported fact"]},
             },
-        })
+        }
         for request in requests[3:6]:
             data = json.loads(json.loads(request.content)["messages"][1]["content"])
-            self.assertEqual(data["resume"], "Original Python resume")
-            self.assertEqual(data["vacancy"], "Python vacancy")
+            assert data["resume"] == "Original Python resume"
+            assert data["vacancy"] == "Python vacancy"
 
-    async def test_client_propagates_claim_and_save_http_errors(self):
+    async def test_client_propagates_claim_and_save_http_errors(self, subtests):
         for status in (401, 404, 409, 500):
             for method in ("claim", "save"):
-                with self.subTest(status=status, method=method):
+                with subtests.test(status=status, method=method):
                     async_client = httpx.AsyncClient
                     transport = httpx.MockTransport(lambda request: httpx.Response(status))
                     with (
@@ -103,7 +104,7 @@ class AdaptationWorkerTests(unittest.IsolatedAsyncioTestCase):
                     ):
                         client = AdaptationHttpClient("http://resume.test")
                         try:
-                            with self.assertRaises(httpx.HTTPStatusError):
+                            with pytest.raises(httpx.HTTPStatusError):
                                 if method == "claim":
                                     await client.claim(self.adaptation_id, self.user_id)
                                 else:
@@ -119,15 +120,15 @@ class AdaptationWorkerTests(unittest.IsolatedAsyncioTestCase):
             patch("app.use_cases.adaptation_task.VacancyHttpClient", return_value=clients[2]),
             patch("app.use_cases.adaptation_task.LLMHttpClient", side_effect=ValueError("missing key")),
         ):
-            with self.assertRaises(ValueError):
+            with pytest.raises(ValueError):
                 async with get_adaptation_task_service():
-                    self.fail("Must not yield on startup error")
+                    pytest.fail("Must not yield on startup error")
         for client in clients:
             client.close.assert_awaited_once()
 
-    async def test_main_acknowledges_only_after_successful_adaptation(self):
+    async def test_main_acknowledges_only_after_successful_adaptation(self, subtests):
         for error in (None, ConnectionError(), asyncio.CancelledError()):
-            with self.subTest(error=error):
+            with subtests.test(error=error):
                 consumer = SimpleNamespace(
                     consume=AsyncMock(side_effect=[(self.event, b"payload"), asyncio.CancelledError()]),
                     ack=AsyncMock(),
@@ -150,9 +151,9 @@ class AdaptationWorkerTests(unittest.IsolatedAsyncioTestCase):
                     patch("app.main.asyncio.sleep", new_callable=AsyncMock),
                     patch("app.main.logger.exception"),
                 ):
-                    with self.assertRaises(asyncio.CancelledError):
+                    with pytest.raises(asyncio.CancelledError):
                         await main()
-                self.assertIn(adaptation, closed)
+                assert adaptation in closed
                 pipeline.process.assert_not_awaited()
                 if error is None:
                     consumer.ack.assert_awaited_once_with(b"payload")
