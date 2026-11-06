@@ -1,8 +1,8 @@
 import json
-import unittest
 import uuid
 from unittest.mock import AsyncMock
 
+import pytest
 from pydantic import ValidationError
 from redis.asyncio import Redis
 from redis.exceptions import ConnectionError
@@ -11,8 +11,9 @@ from app.messaging.redis_consumer import RedisConsumer
 from app.schemas.event import AdaptationRequestedEvent, ResumeUploadedEvent, VacancyUploadedEvent
 
 
-class RedisConsumerTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
+class TestRedisConsumer:
+    @pytest.fixture(autouse=True)
+    def setup(self):
         self.redis = AsyncMock(spec=Redis)
         self.redis.blmove = AsyncMock()
         self.redis.lrem = AsyncMock()
@@ -20,7 +21,7 @@ class RedisConsumerTests(unittest.IsolatedAsyncioTestCase):
         self.resource_id = uuid.uuid4()
         self.user_id = uuid.uuid4()
 
-    async def test_accepts_publisher_payloads(self):
+    async def test_accepts_publisher_payloads(self, subtests):
         for event_type, field, model in (
             ("resume.uploaded", "resume_id", ResumeUploadedEvent),
             ("vacancy.uploaded", "vacancy_id", VacancyUploadedEvent),
@@ -31,15 +32,15 @@ class RedisConsumerTests(unittest.IsolatedAsyncioTestCase):
                 "data": {field: str(self.resource_id), "user_id": str(self.user_id)},
             })
             for wire_payload in (payload, payload.encode()):
-                with self.subTest(event_type=event_type, wire_type=type(wire_payload)):
+                with subtests.test(event_type=event_type, wire_type=type(wire_payload)):
                     self.redis.blmove.return_value = wire_payload
 
                     event, received_payload = await self.consumer.consume()
 
-                    self.assertIsInstance(event, model)
-                    self.assertEqual(received_payload, wire_payload)
-                    self.assertEqual(getattr(event.data, field), self.resource_id)
-                    self.assertEqual(event.data.user_id, self.user_id)
+                    assert isinstance(event, model)
+                    assert received_payload == wire_payload
+                    assert getattr(event.data, field) == self.resource_id
+                    assert event.data.user_id == self.user_id
                     self.redis.blmove.assert_awaited_with(
                         "embedding_tasks", "embedding_tasks:processing", timeout=5,
                         src="LEFT", dest="RIGHT",
@@ -52,7 +53,7 @@ class RedisConsumerTests(unittest.IsolatedAsyncioTestCase):
     async def test_returns_none_on_timeout(self):
         self.redis.blmove.return_value = None
 
-        self.assertIsNone(await self.consumer.consume(timeout=1))
+        assert await self.consumer.consume(timeout=1) is None
         self.redis.blmove.assert_awaited_once_with(
             "embedding_tasks", "embedding_tasks:processing", timeout=1,
             src="LEFT", dest="RIGHT",
@@ -75,7 +76,7 @@ class RedisConsumerTests(unittest.IsolatedAsyncioTestCase):
         )
         self.redis.lrem.assert_not_awaited()
 
-    async def test_rejects_invalid_payloads(self):
+    async def test_rejects_invalid_payloads(self, subtests):
         valid_data = {"resume_id": str(self.resource_id), "user_id": str(self.user_id)}
         payloads = (
             "not json",
@@ -89,10 +90,10 @@ class RedisConsumerTests(unittest.IsolatedAsyncioTestCase):
             json.dumps({"data": valid_data}),
         )
         for payload in payloads:
-            with self.subTest(payload=payload):
+            with subtests.test(payload=payload):
                 self.redis.blmove.return_value = payload
 
-                with self.assertRaises(ValidationError):
+                with pytest.raises(ValidationError):
                     await self.consumer.consume()
 
                 self.redis.lrem.assert_not_awaited()
@@ -111,8 +112,8 @@ class RedisConsumerTests(unittest.IsolatedAsyncioTestCase):
         await self.consumer.ack(first_payload)
         self.redis.lrem.assert_awaited_with("embedding_tasks:processing", 1, payloads[0])
 
-        self.assertNotEqual(first_event.data.resume_id, second_event.data.resume_id)
-        self.assertEqual(self.redis.lrem.await_count, 2)
+        assert first_event.data.resume_id != second_event.data.resume_id
+        assert self.redis.lrem.await_count == 2
 
     async def test_ack_failure_keeps_original_payload(self):
         payload = json.dumps({
@@ -123,22 +124,18 @@ class RedisConsumerTests(unittest.IsolatedAsyncioTestCase):
         self.redis.lrem.side_effect = [ConnectionError("Redis unavailable"), 1]
         _, received_payload = await self.consumer.consume()
 
-        with self.assertRaises(ConnectionError):
+        with pytest.raises(ConnectionError):
             await self.consumer.ack(received_payload)
         await self.consumer.ack(received_payload)
 
-        self.assertEqual(self.redis.lrem.await_count, 2)
+        assert self.redis.lrem.await_count == 2
         self.redis.lrem.assert_awaited_with("embedding_tasks:processing", 1, payload)
 
     async def test_propagates_redis_error(self):
         error = ConnectionError("Redis unavailable")
         self.redis.blmove.side_effect = error
 
-        with self.assertRaises(ConnectionError) as raised:
+        with pytest.raises(ConnectionError) as raised:
             await self.consumer.consume()
 
-        self.assertIs(raised.exception, error)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert raised.value is error
