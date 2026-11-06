@@ -1,8 +1,8 @@
 import json
-import unittest
 from unittest.mock import patch
 
 import httpx
+import pytest
 from pydantic import ValidationError
 
 from app.agents.critic import CriticAgent
@@ -12,7 +12,11 @@ from app.clients.llm import LLMHttpClient
 from app.services.resume_adaptation import ResumeAdaptationService
 
 
-class ResumeAdaptationTests(unittest.IsolatedAsyncioTestCase):
+class TestResumeAdaptation:
+    @pytest.fixture(autouse=True)
+    def setup(self, cleanup):
+        self.cleanup = cleanup
+
     async def create_service(self, *responses):
         self.requests = []
         responses = iter(responses)
@@ -26,7 +30,7 @@ class ResumeAdaptationTests(unittest.IsolatedAsyncioTestCase):
         )
         with patch("app.clients.llm.httpx.AsyncClient", return_value=http_client):
             client = LLMHttpClient("https://api.openai.com/v1/", "test-key", "gpt-4.1-mini")
-        self.addAsyncCleanup(client.close)
+        self.cleanup.push_async_callback(client.close)
         return ResumeAdaptationService(MatcherAgent(client), TailorAgent(client), CriticAgent(client))
 
     def completion(self, result):
@@ -51,15 +55,15 @@ class ResumeAdaptationTests(unittest.IsolatedAsyncioTestCase):
 
         result = await service.run(resume, vacancy)
 
-        self.assertEqual(result.model_dump(), {
+        assert result.model_dump() == {
             "resume_text": tailored, "review": {"passed": True, "issues": []},
-        })
+        }
         payloads = [json.loads(json.loads(request.content)["messages"][1]["content"]) for request in self.requests]
-        self.assertEqual(payloads, [
+        assert payloads == [
             {"resume": resume, "vacancy": vacancy},
             {"resume": resume, "vacancy": vacancy, "match_result": match},
             {"resume": resume, "vacancy": vacancy, "tailor_result": {"resume_text": tailored}},
-        ])
+        ]
 
     async def test_returns_rejected_review_without_retrying(self):
         service = await self.create_service(
@@ -70,16 +74,16 @@ class ResumeAdaptationTests(unittest.IsolatedAsyncioTestCase):
 
         result = await service.run("Python", "Python и Docker")
 
-        self.assertEqual(result.model_dump(), {
+        assert result.model_dump() == {
             "resume_text": "Python, Docker",
             "review": {"passed": False, "issues": ["Docker отсутствует в исходном резюме."]},
-        })
-        self.assertEqual(len(self.requests), 3)
+        }
+        assert len(self.requests) == 3
 
-    async def test_stops_after_error_at_any_stage(self):
+    async def test_stops_after_error_at_any_stage(self, subtests):
         for stage in range(3):
             for error in ("http", "validation"):
-                with self.subTest(stage=stage, error=error):
+                with subtests.test(stage=stage, error=error):
                     responses = [
                         self.completion({"matches": [], "gaps": []}),
                         self.completion({"resume_text": "Python"}),
@@ -93,16 +97,16 @@ class ResumeAdaptationTests(unittest.IsolatedAsyncioTestCase):
                         expected = ValidationError
                     service = await self.create_service(*responses)
 
-                    with self.assertRaises(expected):
+                    with pytest.raises(expected):
                         await service.run("Python", "Python")
 
-                    self.assertEqual(len(self.requests), stage + 1)
+                    assert len(self.requests) == stage + 1
 
-    async def test_rejects_empty_documents_before_http_request(self):
+    async def test_rejects_empty_documents_before_http_request(self, subtests):
         service = await self.create_service()
         for resume, vacancy in (("", "Python"), (" \n ", "Python"),
                                 ("Python", ""), ("Python", " \n ")):
-            with self.subTest(resume=resume, vacancy=vacancy):
-                with self.assertRaises(ValueError):
+            with subtests.test(resume=resume, vacancy=vacancy):
+                with pytest.raises(ValueError):
                     await service.run(resume, vacancy)
-        self.assertEqual(self.requests, [])
+        assert self.requests == []
