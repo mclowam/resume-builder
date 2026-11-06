@@ -4,6 +4,7 @@
 **/.pytest_cache/
 /backend/worker/examples/results/
 .codex
+.serena/
 .agents
 scripts
 .graphifyignore
