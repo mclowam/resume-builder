@@ -1,13 +1,13 @@
 import asyncio
-import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, call, patch
 
+import pytest
 from app.main import main
 from app.core.core import settings
 
 
-class MainTests(unittest.IsolatedAsyncioTestCase):
+class TestMain:
     async def test_processes_event_and_closes_clients(self):
         await self.run_worker()
 
@@ -34,15 +34,15 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
             patch("app.use_cases.pipeline.ResumeHttpClient", return_value=resume),
             patch("app.use_cases.pipeline.VacancyHttpClient", side_effect=ValueError("Invalid URL")),
         ):
-            with self.assertRaises(ValueError):
+            with pytest.raises(ValueError):
                 await main()
 
         resume.close.assert_awaited_once()
         redis.aclose.assert_awaited_once()
 
-    async def test_missing_api_key_does_not_consume_and_closes_clients(self):
+    async def test_missing_api_key_does_not_consume_and_closes_clients(self, subtests):
         for api_key in (None, "", " \t "):
-            with self.subTest(api_key=api_key):
+            with subtests.test(api_key=api_key):
                 redis = SimpleNamespace(aclose=AsyncMock())
                 resume = SimpleNamespace(close=AsyncMock())
                 vacancy = SimpleNamespace(close=AsyncMock())
@@ -54,7 +54,7 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
                     patch("app.use_cases.pipeline.ResumeHttpClient", return_value=resume),
                     patch("app.use_cases.pipeline.VacancyHttpClient", return_value=vacancy),
                 ):
-                    with self.assertRaisesRegex(ValueError, "OPENAI_API_KEY"):
+                    with pytest.raises(ValueError, match="OPENAI_API_KEY"):
                         await main()
 
                 consumer.consume.assert_not_awaited()
@@ -125,7 +125,7 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
             patch("app.main.logger.info") as log_info,
         ):
             calls.attach_mock(sleep, "sleep")
-            with self.assertRaises(asyncio.CancelledError):
+            with pytest.raises(asyncio.CancelledError):
                 await main()
 
         document_factory.assert_called_once_with(
@@ -135,9 +135,9 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
             document_service=document_service,
             embedding_client=embedding,
         )
-        self.assertEqual(pipeline.process.await_args_list, process_calls)
-        self.assertEqual(consumer.ack.await_args_list, ack_calls)
-        self.assertEqual([item[0] for item in calls.mock_calls], order)
+        assert pipeline.process.await_args_list == process_calls
+        assert consumer.ack.await_args_list == ack_calls
+        assert [item[0] for item in calls.mock_calls] == order
         if isinstance(error, Exception):
             sleep.assert_awaited_once_with(5)
             log_error.assert_called_once()
@@ -150,7 +150,3 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
         resume.close.assert_awaited_once()
         vacancy.close.assert_awaited_once()
         embedding.close.assert_awaited_once()
-
-
-if __name__ == "__main__":
-    unittest.main()
