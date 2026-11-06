@@ -1,6 +1,7 @@
 /.tools/
 /graphify-out/
 **/__pycache__/
+**/.pytest_cache/
 /backend/worker/examples/results/
 .codex
 .agents
